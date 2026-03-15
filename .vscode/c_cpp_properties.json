@@ -1,0 +1,41 @@
+{
+    "configurations": [
+        {
+            "name": "Pico",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/Users/markpower/Unix/PicoProjects/hid-pico-a/build/generated/pico_base",
+                "/Users/markpower/.pico-sdk/sdk/2.2.0/src/common/pico_base_headers/include",
+                "/Users/markpower/.pico-sdk/sdk/2.2.0/src/common/pico_stdlib_headers/include",
+                "/Users/markpower/.pico-sdk/sdk/2.2.0/src/common/pico_time/include",
+                "/Users/markpower/.pico-sdk/sdk/2.2.0/src/rp2040/pico_platform/include",
+                "/Users/markpower/.pico-sdk/sdk/2.2.0/src/rp2040/hardware_regs/include",
+                "/Users/markpower/.pico-sdk/sdk/2.2.0/src/rp2040/hardware_structs/include",
+                "/Users/markpower/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_platform_common/include",
+                "/Users/markpower/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_platform_compiler/include",
+                "/Users/markpower/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_platform_sections/include",
+                "/Users/markpower/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_platform_panic/include",
+                "/Users/markpower/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_stdio/include",
+                "/Users/markpower/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_base/include",
+                "/Users/markpower/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_timer/include",
+                "/Users/markpower/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_gpio/include",
+                "/Users/markpower/.pico-sdk/sdk/2.2.0/src/rp2_common/hardware_uart/include",
+                "/Users/markpower/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_cyw43_arch/include",
+                "/Users/markpower/.pico-sdk/sdk/2.2.0/src/rp2_common/pico_cyw43_driver/include",
+                "/Users/markpower/.pico-sdk/sdk/2.2.0/lib/tinyusb/src",
+                "/Users/markpower/.pico-sdk/sdk/2.2.0/lib/tinyusb/hw",
+                "/Users/markpower/.pico-sdk/sdk/2.2.0/lib/cyw43-driver/src",
+                "/Users/markpower/.pico-sdk/sdk/2.2.0/lib/lwip/src/include",
+                "/Users/markpower/.pico-sdk/sdk/2.2.0/lib/btstack/platform/lwip/port/arch"
+            ],
+            "defines": [
+                "PICO_BOARD=pico_w"
+            ],
+            "compilerPath": "/Users/markpower/Library/Arduino15/packages/rp2040/tools/pqt-gcc/4.1.0-1aec55e/bin/arm-none-eabi-gcc",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "gcc-arm"
+        }
+    ],
+    "version": 4
+}
