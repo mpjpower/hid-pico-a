@@ -32,7 +32,7 @@ static int led_pin = 25; // default Pico LED
 #define REPORT_SIZE 64
 
 // Version
-#define VERSION "1.0.7"
+#define VERSION "1.0.11"
 
 // Buffer for UART read
 char uart_buffer[256];
@@ -124,8 +124,25 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
     if (report_type == HID_REPORT_TYPE_OUTPUT) {
         // Process the command
         char command[REPORT_SIZE + 1];
-        memcpy(command, buffer, bufsize);
-        command[bufsize] = '\0';
+        memset(command, 0, sizeof(command));  // Clear buffer first
+        
+        // Find actual data length by looking for null terminator in incoming buffer
+        uint16_t actual_len = 0;
+        for (uint16_t i = 0; i < bufsize; i++) {
+            if (buffer[i] == '\0') {
+                actual_len = i;
+                break;
+            }
+        }
+        if (actual_len == 0 && bufsize > 0) {
+            actual_len = bufsize;  // No null found, use full bufsize
+        }
+        
+        // Copy only the actual data
+        if (actual_len > 0) {
+            memcpy(command, buffer, actual_len);
+        }
+        command[actual_len] = '\0';
 
         // Parse command
         char cmd = command[0];
@@ -150,8 +167,14 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
                 break;
             case 'S':
                 // Send over UART
-                uart_puts(UART_ID, command + 2);
-                strcpy(response, "Sent to UART");
+                // Now that buffer is properly cleaned, just find the string length
+                if (actual_len > 2) {
+                    int data_len = strlen(command + 2);  // Safe now that garbage is removed
+                    uart_write_blocking(UART_ID, (uint8_t*)(command + 2), data_len);
+                    snprintf(response, REPORT_SIZE, "Sent %d bytes to UART", data_len);
+                } else {
+                    strcpy(response, "No data to send");
+                }
                 break;
             case 'R':
                 // Read from UART buffer
