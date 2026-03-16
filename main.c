@@ -32,7 +32,7 @@ static int led_pin = 25; // default Pico LED
 #define REPORT_SIZE 64
 
 // Version
-#define VERSION "1.0.11"
+#define VERSION "1.0.12"
 
 // Buffer for UART read
 char uart_buffer[256];
