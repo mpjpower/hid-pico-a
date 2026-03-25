@@ -183,9 +183,6 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
                     response[len++] = uart_getc(UART_ID);
                 }
                 response[len] = '\0';
-                if (len == 0) {
-                    strcpy(response, "No data in UART buffer");
-                }
                 break;
             case 'L':
                 // Turn on LED
