@@ -10,6 +10,8 @@
 #include "device/usbd.h"
 
 #include "pico/cyw43_arch.h"
+#include "i2c_interface.h"
+#include "lux.h"
 
 static bool cyw43_ok = false;
 static bool use_cyw43_led = false;
@@ -32,7 +34,7 @@ static int led_pin = 25; // default Pico LED
 #define REPORT_SIZE 64
 
 // Version
-#define VERSION "1.0.12"
+#define VERSION "1.0.14"
 
 // Buffer for UART read
 char uart_buffer[256];
@@ -204,6 +206,82 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
                 }
                 strcpy(response, "LED off");
                 break;
+            case 'I': {
+                // Set I2C device registers: "I device_name reg:val [reg:val ...]"
+                // Values are decimal 0-255, e.g. "I tsl2591 0:3 1:30"
+                char devname[32] = {0};
+                uint8_t i_regs[16], i_vals[16];
+                int i_count = 0;
+                char *ip = command + 2;
+                while (*ip == ' ') ip++;
+                int ni = 0;
+                while (*ip && *ip != ' ' && ni < 31) devname[ni++] = *ip++;
+                devname[ni] = '\0';
+                while (*ip && i_count < 16) {
+                    while (*ip == ' ') ip++;
+                    if (!*ip) break;
+                    unsigned int r, v;
+                    if (sscanf(ip, "%u:%u", &r, &v) == 2 && r <= 255 && v <= 255) {
+                        i_regs[i_count] = (uint8_t)r;
+                        i_vals[i_count] = (uint8_t)v;
+                        i_count++;
+                    }
+                    while (*ip && *ip != ' ') ip++;
+                }
+                if (i_count == 0) {
+                    strcpy(response, "1 No reg:val pairs");
+                } else if (SetRegs(devname, i_regs, i_vals, i_count) == 0) {
+                    snprintf(response, REPORT_SIZE, "0 Set %d reg(s) on %s", i_count, devname);
+                } else {
+                    if (!i2c_device_known(devname)) {
+                        snprintf(response, REPORT_SIZE, "1 Unknown I2C dev %s", devname);
+                    } else if (!i2c_device_probe(devname)) {
+                        snprintf(response, REPORT_SIZE, "1 No I2C ACK from %s", devname);
+                    } else {
+                        snprintf(response, REPORT_SIZE, "1 SetRegs failed for %s", devname);
+                    }
+                }
+                break;
+            }
+            case 'J': {
+                // Get I2C device registers: "J device_name reg [reg ...]"
+                // Registers are decimal 0-255, e.g. "J tsl2591 20 21"
+                char devname[32] = {0};
+                uint8_t j_regs[16], j_vals[16];
+                int j_count = 0;
+                char *jp = command + 2;
+                while (*jp == ' ') jp++;
+                int nj = 0;
+                while (*jp && *jp != ' ' && nj < 31) devname[nj++] = *jp++;
+                devname[nj] = '\0';
+                while (*jp && j_count < 16) {
+                    while (*jp == ' ') jp++;
+                    if (!*jp) break;
+                    unsigned int r;
+                    if (sscanf(jp, "%u", &r) == 1 && r <= 255) {
+                        j_regs[j_count++] = (uint8_t)r;
+                    }
+                    while (*jp && *jp != ' ') jp++;
+                }
+                if (j_count == 0) {
+                    strcpy(response, "1 No registers specified");
+                } else if (GetRegs(devname, j_regs, j_count, j_vals) == 0) {
+                    int off = snprintf(response, REPORT_SIZE, "0 ");
+                    for (int i = 0; i < j_count && off < REPORT_SIZE - 4; i++) {
+                        off += snprintf(response + off, REPORT_SIZE - off,
+                                        "%u ", j_vals[i]);
+                    }
+                } else {
+                    if (!i2c_device_known(devname)) {
+                        snprintf(response, REPORT_SIZE, "1 Unknown I2C dev %s", devname);
+                    } else if (!i2c_device_probe(devname)) {
+                        snprintf(response, REPORT_SIZE, "1 No I2C ACK from %s", devname);
+                    } else {
+                        snprintf(response, REPORT_SIZE, "1 GetRegs failed for %s", devname);
+                    }
+                }
+                break;
+            }
             default:
                 strcpy(response, "Unknown command");
                 break;
@@ -244,6 +322,10 @@ int main() {
         gpio_set_dir(led_pin, GPIO_OUT);
         gpio_put(led_pin, 0);
     }
+
+    // Initialise I2C bus and register devices
+    i2c_bus_init();
+    lux_register();
 
     // Initialize TinyUSB
     tusb_init();

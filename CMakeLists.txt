@@ -31,13 +31,15 @@ pico_sdk_init()
 
 add_executable(${PROJECT_NAME}
     main.c
+    i2c_interface.c
+    lux.c
 )
 
 # Example include
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Pull in our pico_stdlib which pulls in commonly used features
-target_link_libraries(${PROJECT_NAME} pico_stdlib tinyusb_device tinyusb_board pico_unique_id pico_cyw43_arch_none)
+target_link_libraries(${PROJECT_NAME} pico_stdlib tinyusb_device tinyusb_board pico_unique_id pico_cyw43_arch_none hardware_i2c)
 
 # Enable USB output, disable UART output
 # pico_enable_stdio_usb(${PROJECT_NAME} 1)
