@@ -24,7 +24,19 @@ A Raspberry Pi Pico application that acts as a USB-HID device, responding to ASC
 - `J <device> <reg> [reg ...]`: Read one or more I2C registers using decimal register numbers 0-255
 	- Example: `J tsl2591 20 21`
 	- Response format: decimal values only, space-separated, in the same order as requested registers
-	- I2C response prefix: `0 ` indicates success, `1 ` indicates error
+
+## Response Format
+
+All command responses begin with a status prefix:
+
+- `0 ` (ASCII 48 then 32): success
+- `1 ` (ASCII 49 then 32): error
+
+Examples:
+
+- `0 Version: 1.0.13`
+- `0 45 0 12 0`
+- `1 No I2C ACK from tsl2591`
 
 > Note: On Pico W the onboard LED is driven via the CYW43 WiFi chip, so the `L`/`O` commands use the CYW43 driver to toggle it.
 
@@ -89,16 +101,35 @@ To communicate with the device, you need a host program that can send and receiv
 ```python
 import hid
 
-# Find the device
 device = hid.device()
 device.open(0xCafe, 0x4001)  # Vendor ID and Product ID
 
-# Send command
-device.write(b'V\x00' + b'\x00' * 61)  # 'V' command padded to 64 bytes
+def send_cmd(cmd: str):
+	# HID OUT report must be 64 bytes; command is null-terminated then padded.
+	raw = cmd.encode("ascii") + b"\x00"
+	if len(raw) > 64:
+		raise ValueError("Command too long for 64-byte HID report")
+	device.write(raw + b"\x00" * (64 - len(raw)))
 
-# Read response
-response = device.read(64)
-print(bytes(response).decode('utf-8').rstrip('\x00'))
+	resp = bytes(device.read(64)).decode("ascii", errors="replace").rstrip("\x00").strip()
+	if len(resp) < 2 or resp[1] != " ":
+		raise RuntimeError(f"Malformed response: {resp!r}")
+
+	status = resp[0]    # '0' success, '1' error
+	payload = resp[2:]  # message/data after status prefix
+	return status, payload
+
+# Example: version query
+status, payload = send_cmd("V")
+print(f"status={status} payload={payload}")
+
+# Example: I2C read
+status, payload = send_cmd("J tsl2591 20 21 22 23")
+if status == "0":
+	values = [int(x) for x in payload.split()]
+	print("I2C values:", values)
+else:
+	print("I2C error:", payload)
 ```
 
 Note: HID reports are 64 bytes. Commands should be null-terminated and padded.

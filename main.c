@@ -34,7 +34,7 @@ static int led_pin = 25; // default Pico LED
 #define REPORT_SIZE 64
 
 // Version
-#define VERSION "1.0.14"
+#define VERSION "1.0.15"
 
 // Buffer for UART read
 char uart_buffer[256];
@@ -152,7 +152,7 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
 
         switch (cmd) {
             case 'V':
-                snprintf(response, REPORT_SIZE, "Version: %s", VERSION);
+                snprintf(response, REPORT_SIZE, "0 Version: %s", VERSION);
                 break;
             case 'U':
                 // Set UART config, e.g., "U 9600"
@@ -162,9 +162,9 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
                     gpio_set_function(UART_TX_PIN, GPIO_FUNC_UART);
                     gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
                     uart_set_format(UART_ID, DATA_BITS, STOP_BITS, PARITY);
-                    snprintf(response, REPORT_SIZE, "UART set to %d baud", baud);
+                    snprintf(response, REPORT_SIZE, "0 UART set to %d baud", baud);
                 } else {
-                    strcpy(response, "Invalid UART config");
+                    strcpy(response, "1 Invalid UART config");
                 }
                 break;
             case 'S':
@@ -173,9 +173,9 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
                 if (actual_len > 2) {
                     int data_len = strlen(command + 2);  // Safe now that garbage is removed
                     uart_write_blocking(UART_ID, (uint8_t*)(command + 2), data_len);
-                    snprintf(response, REPORT_SIZE, "Sent %d bytes to UART", data_len);
+                    snprintf(response, REPORT_SIZE, "0 Sent %d bytes to UART", data_len);
                 } else {
-                    strcpy(response, "No data to send");
+                    strcpy(response, "1 No data to send");
                 }
                 break;
             case 'R':
@@ -194,7 +194,7 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
                 } else {
                     gpio_put(led_pin, 1);
                 }
-                strcpy(response, "LED on");
+                strcpy(response, "0 LED on");
                 break;
             case 'O':
                 // Turn off LED
@@ -204,7 +204,7 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
                 } else {
                     gpio_put(led_pin, 0);
                 }
-                strcpy(response, "LED off");
+                strcpy(response, "0 LED off");
                 break;
             case 'I': {
                 // Set I2C device registers: "I device_name reg:val [reg:val ...]"
@@ -283,7 +283,7 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
                 break;
             }
             default:
-                strcpy(response, "Unknown command");
+                strcpy(response, "1 Unknown command");
                 break;
         }
 
