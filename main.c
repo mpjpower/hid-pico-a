@@ -34,7 +34,7 @@ static int led_pin = 25; // default Pico LED
 #define REPORT_SIZE 64
 
 // Version
-#define VERSION "1.0.15"
+#define VERSION "1.0.16"
 
 // Buffer for UART read
 char uart_buffer[256];
@@ -188,7 +188,6 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
                 break;
             case 'L':
                 // Turn on LED
-                uart_puts(UART_ID, "Turning LED on\n");
                 if (use_cyw43_led && cyw43_ok) {
                     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
                 } else {
@@ -198,7 +197,6 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
                 break;
             case 'O':
                 // Turn off LED
-                uart_puts(UART_ID, "Turning LED off\n");
                 if (use_cyw43_led && cyw43_ok) {
                     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
                 } else {
