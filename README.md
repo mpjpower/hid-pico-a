@@ -55,12 +55,19 @@ Use the generated `hid-pico-a.uf2` file to flash the Pico in BOOTSEL mode.
 
 Connect the Pico via USB. Use a host application that can send/receive HID reports to communicate with the device.
 
-For UART, connect pins GPIO0 (TX) and GPIO1 (RX) to your UART device.
+For UART connect the following pins to your UART device:
 
-For I2C in this firmware, connect:
+- GPIO0 TX
+- GPIO1 RX
+- Suitable GND and 3V3out 
+
+Note: Use a FTDI232 to bring the Pico UART output up to RS232 levels.
+
+For I2C connect:
 
 - GPIO4 as SDA
 - GPIO5 as SCL
+- Suitable GNS and 3V3out
 
 The current implementation uses `i2c0` at 100 kHz.
 
