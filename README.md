@@ -67,7 +67,7 @@ For I2C connect:
 
 - GPIO4 as SDA
 - GPIO5 as SCL
-- Suitable GNS and 3V3out
+- Suitable GND and 3V3out
 
 The current implementation uses `i2c0` at 100 kHz.
 
