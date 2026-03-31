@@ -1,0 +1,145 @@
+EXPORT Open()
+BEGIN
+  LOCAL sts:={};
+
+  IF EQ(USBOpen(),{{#CAFEh,#4001h}}) THEN
+    IF EQ(USBOpen(#CAFEh,#4001h),{64,64}) THEN
+      sts:={0, "Pico connected"};
+    ELSE
+      USBOpen();
+      sts:={1, "Pico response error"};
+    END;
+  ELSE
+    USBOpen();
+    sts:={1, "Pico not connected"};
+  END;
+
+  RETURN sts;
+END;
+
+
+EXPORT PicoVersion()
+BEGIN
+  LOCAL msg:=Send("V");
+  IF TYPE(msg)==6 THEN
+    RETURN CHAR(msg[2]);
+  ELSE
+    RETURN msg;
+  END;
+END;
+
+
+EXPORT LedOn()
+BEGIN
+  LOCAL msg:=Send("L");
+  IF TYPE(msg)==6 THEN
+    RETURN CHAR(msg[2]);
+  ELSE
+    RETURN msg;
+  END;
+END;
+
+EXPORT LedOff()
+BEGIN
+  LOCAL msg:=Send("O");
+  IF TYPE(msg)==6 THEN
+    RETURN CHAR(msg[2]);
+  ELSE
+    RETURN msg;
+  END;
+END;
+
+
+EXPORT SetUartBaudRate(baudrate)
+BEGIN
+  LOCAL msg:=Send("U "+baudrate);
+  IF TYPE(msg)==6 THEN
+    RETURN CHAR(msg[2]);
+  ELSE
+    RETURN msg;
+  END;
+END;
+
+
+EXPORT SendUart(msg)
+BEGIN
+  // TYPE 2=string, 6=list
+
+  CASE
+  IF TYPE(msg)==6 THEN
+    // Send as bytes (allows control characters)
+    RETURN Send(CONCAT(ASC("S"),CONCAT(ASC(" "),msg)));
+  END
+
+  IF TYPE(msg)==2 THEN
+    // Send a string (strings don't allow control characters)
+    RETURN Send("S "+msg); 
+  END
+
+  RETURN({1, "Type not handled"});
+  END;
+END;
+
+
+EXPORT ReceiveUartBytes()
+BEGIN
+  LOCAL recv:=Send("R");
+  LOCAL msg:={};
+  LOCAL c:=1;
+
+  IF TYPE(recv)==6 THEN
+    recv:=recv[2];
+
+    // Copy the string to first null
+    WHILE (recv[c]<>0) DO
+      msg(SIZE(msg)+1):=recv[c];
+      c:=c+1;
+    END;
+  END;
+
+  RETURN(msg);
+END;
+
+
+EXPORT Send(cmd)
+BEGIN
+  LOCAL msg;
+
+  CASE
+  IF TYPE(cmd)==2 THEN
+    // If a string then convert to list and append null
+    cmd:=CONCAT(ASC(cmd),0);
+  END
+
+  IF TYPE(cmd)==6 THEN
+    // Already a list, so just append null
+    cmd:=CONCAT(cmd,0);
+  END
+
+  RETURN({1, "Type not handled"});
+  END;
+
+  USBSend(cmd);
+
+  msg:=WaitForMessage();
+
+  IF TYPE(msg)==6 THEN
+    RETURN({0,msg});
+  ELSE
+    RETURN(0);
+  END;
+END;
+
+
+EXPORT WaitForMessage()
+BEGIN
+  LOCAL sts:={};
+  LOCAL c:=0;
+
+  WHILE (c<1000) AND EQ(sts, {}) DO
+    sts:=USBRecv(); 
+    c:=c+1;
+  END;
+  RETURN (sts);
+END;
+

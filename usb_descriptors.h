@@ -1,0 +1,6 @@
+#ifndef USB_DESCRIPTORS_H
+#define USB_DESCRIPTORS_H
+
+#define USB_HID_REPORT_SIZE 64
+
+#endif // USB_DESCRIPTORS_H

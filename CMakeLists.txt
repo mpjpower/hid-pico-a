@@ -31,6 +31,11 @@ pico_sdk_init()
 
 add_executable(${PROJECT_NAME}
     main.c
+    led.c
+    hid_transport.c
+    usb_descriptors.c
+    command_interface.c
+    uart_interface.c
     i2c_interface.c
     lux.c
 )

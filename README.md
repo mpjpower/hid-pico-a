@@ -15,7 +15,7 @@ A Raspberry Pi Pico application that acts as a USB-HID device, responding to ASC
 - `V`: Get version number
 - `U <baudrate>`: Set UART baudrate (e.g., `U 9600`)
 - `S <text>`: Send text over UART
-- `R`: Read from UART buffer and return contents
+- `R`: Read the next queued UART bytes and return one HID-sized chunk
 - `L`: Turn on the LED
 - `O`: Turn off the LED
 - `P <pin>`: Set the LED GPIO pin (cannot overlap UART pins 0/1; e.g., `P 25` for Pico)
@@ -140,3 +140,10 @@ else:
 ```
 
 Note: HID reports are 64 bytes. Commands should be null-terminated and padded.
+
+## UART Buffering
+
+- Incoming UART bytes are now captured continuously into a Pico-side ring buffer.
+- The `R` command returns queued UART data in batches of up to 63 bytes per HID response.
+- This reduces dropped UART data when the remote system sends bursts faster than the host polls HID.
+- Sustained traffic can still overflow the Pico-side queue if the host drains it too slowly. If your remote peer supports it, flow control such as RTS/CTS or XON/XOFF is still useful for long bursts.
