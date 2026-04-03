@@ -146,4 +146,4 @@ Note: HID reports are 64 bytes. Commands should be null-terminated and padded.
 - Incoming UART bytes are now captured continuously into a Pico-side ring buffer.
 - The `R` command returns queued UART data in batches of up to 63 bytes per HID response.
 - This reduces dropped UART data when the remote system sends bursts faster than the host polls HID.
-- Sustained traffic can still overflow the Pico-side queue if the host drains it too slowly. If your remote peer supports it, flow control such as RTS/CTS or XON/XOFF is still useful for long bursts.
+- Sustained traffic can still overflow the Pico-side queue if the host drains it too slowly. If the remote computer supports it, flow control such as RTS/CTS or XON/XOFF is still useful for long bursts, but would need adjustments to the code on the Pico.
