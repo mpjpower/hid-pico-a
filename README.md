@@ -18,12 +18,11 @@ A Raspberry Pi Pico application that acts as a USB-HID device, responding to ASC
 - `R`: Read the next queued UART bytes and return one HID-sized chunk
 - `L`: Turn on the LED
 - `O`: Turn off the LED
-- `P <pin>`: Set the LED GPIO pin (cannot overlap UART pins 0/1; e.g., `P 25` for Pico)
-- `I <device> <reg:val> [reg:val ...]`: Set one or more I2C registers using decimal values 0-255
-	- Example: `I tsl2591 0:3 1:30`
-- `J <device> <reg> [reg ...]`: Read one or more I2C registers using decimal register numbers 0-255
-	- Example: `J tsl2591 20 21`
-	- Response format: decimal values only, space-separated, in the same order as requested registers
+- `I <device> {reg,val,reg,val,...}`: Set one or more I2C registers (decimal values 0-255)
+	- Example: `I tsl2591 {0,3,1,16}`
+- `J <device> {reg,reg,...}`: Read one or more I2C registers (decimal register numbers 0-255)
+	- Example: `J tsl2591 {20,21}`
+	- Response format: `0 {val,val,...}` in the same order as requested registers
 
 ## Response Format
 
@@ -34,8 +33,8 @@ All command responses begin with a status prefix:
 
 Examples:
 
-- `0 Version: 1.0.13`
-- `0 45 0 12 0`
+- `0 Version: 1.0.20`
+- `0 {45,0,12,0}`
 - `1 No I2C ACK from tsl2591`
 
 > Note: On Pico W the onboard LED is driven via the CYW43 WiFi chip, so the `L`/`O` commands use the CYW43 driver to toggle it.
@@ -83,17 +82,17 @@ The current implementation uses `i2c0` at 100 kHz.
 Use these HID command strings (ASCII) to verify I2C access:
 
 1. Enable the sensor (`ENABLE` register 0 = `0x03`):
-	- `I tsl2591 0:3`
+	- `I tsl2591 {0,3}`
 2. Configure timing/gain (`CONTROL` register 1 = `0x10`, example value):
-	- `I tsl2591 1:16`
+	- `I tsl2591 {1,16}`
 3. Read back key registers to confirm communication:
-	- `J tsl2591 0 1`
+	- `J tsl2591 {0,1}`
 4. Read channel data registers (C0DATAL/C0DATAH/C1DATAL/C1DATAH):
-	- `J tsl2591 20 21 22 23`
+	- `J tsl2591 {20,21,22,23}`
 
-Expected response format for `J` is status prefix + decimal values (space-separated), for example:
+Expected response format for `J` is status prefix + a comma-separated list in braces, for example:
 
-- `0 45 0 12 0`
+- `0 {45,0,12,0}`
 
 If the sensor does not respond on the bus, commands may return:
 
@@ -131,9 +130,9 @@ status, payload = send_cmd("V")
 print(f"status={status} payload={payload}")
 
 # Example: I2C read
-status, payload = send_cmd("J tsl2591 20 21 22 23")
+status, payload = send_cmd("J tsl2591 {20,21,22,23}")
 if status == "0":
-	values = [int(x) for x in payload.split()]
+	values = [int(x) for x in payload.strip("{}").split(",") if x]
 	print("I2C values:", values)
 else:
 	print("I2C error:", payload)

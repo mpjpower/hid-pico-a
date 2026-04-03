@@ -1,5 +1,6 @@
 #include "command_interface.h"
 
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -7,7 +8,63 @@
 #include "uart_interface.h"
 #include "led.h"
 
-#define VERSION "1.0.19"
+#define VERSION "1.0.20"
+
+static void skip_spaces(char **p) {
+    while (**p == ' ') {
+        (*p)++;
+    }
+}
+
+static int parse_devname(char **p, char *devname, size_t devname_size) {
+    size_t n = 0;
+
+    skip_spaces(p);
+    while (**p && **p != ' ' && n < devname_size - 1) {
+        devname[n++] = **p;
+        (*p)++;
+    }
+    devname[n] = '\0';
+
+    return (n > 0) ? 0 : -1;
+}
+
+static int parse_u8_list(char **p, uint8_t *out, int max_count) {
+    int count = 0;
+
+    skip_spaces(p);
+    if (**p != '{') {
+        return -1;
+    }
+    (*p)++;
+
+    while (1) {
+        char *endptr;
+        unsigned long value;
+
+        skip_spaces(p);
+        value = strtoul(*p, &endptr, 10);
+        if (endptr == *p || value > 255 || count >= max_count) {
+            return -1;
+        }
+
+        out[count++] = (uint8_t) value;
+        *p = endptr;
+
+        skip_spaces(p);
+        if (**p == ',') {
+            (*p)++;
+            continue;
+        }
+        if (**p == '}') {
+            (*p)++;
+            break;
+        }
+        return -1;
+    }
+
+    return count;
+}
 
 void command_interface_process(const uint8_t *buffer, uint16_t bufsize, char *response, size_t response_size) {
     if (!response || response_size == 0) {
@@ -89,35 +146,39 @@ void command_interface_process(const uint8_t *buffer, uint16_t bufsize, char *re
 
         case 'I': {
             char devname[32] = {0};
-            uint8_t i_regs[16], i_vals[16];
-            int i_count = 0;
+            uint8_t i_pairs[32], i_regs[16], i_vals[16];
             char *ip = command + 2;
-            while (*ip == ' ') ip++;
-            int ni = 0;
-            while (*ip && *ip != ' ' && ni < 31) devname[ni++] = *ip++;
-            devname[ni] = '\0';
-            while (*ip && i_count < 16) {
-                while (*ip == ' ') ip++;
-                if (!*ip) break;
-                unsigned int r, v;
-                if (sscanf(ip, "%u:%u", &r, &v) == 2 && r <= 255 && v <= 255) {
-                    i_regs[i_count] = (uint8_t) r;
-                    i_vals[i_count] = (uint8_t) v;
-                    i_count++;
-                }
-                while (*ip && *ip != ' ') ip++;
+            int pair_count;
+            int i_count;
+
+            if (parse_devname(&ip, devname, sizeof(devname)) != 0) {
+                snprintf(response, response_size, "1 Missing I2C device name");
+                break;
             }
-            if (i_count == 0) {
-                snprintf(response, response_size, "1 No reg:val pairs");
-            } else if (SetRegs(devname, i_regs, i_vals, i_count) == 0) {
-                snprintf(response, response_size, "0 Set %d reg(s) on %s", i_count, devname);
+
+            pair_count = parse_u8_list(&ip, i_pairs, 32);
+
+            if (pair_count <= 0) {
+                snprintf(response, response_size, "1 Invalid format, expected I <dev> {r1,v1,r2,v2,...}");
+            } else if ((pair_count % 2) != 0) {
+                snprintf(response, response_size, "1 Pairs list must be even length");
             } else {
-                if (!i2c_device_known(devname)) {
-                    snprintf(response, response_size, "1 Unknown I2C dev %s", devname);
-                } else if (!i2c_device_probe(devname)) {
-                    snprintf(response, response_size, "1 No I2C ACK from %s", devname);
+                i_count = pair_count / 2;
+                for (int i = 0; i < i_count; i++) {
+                    i_regs[i] = i_pairs[2 * i];
+                    i_vals[i] = i_pairs[2 * i + 1];
+                }
+
+                if (SetRegs(devname, i_regs, i_vals, i_count) == 0) {
+                    snprintf(response, response_size, "0 Set %d reg(s) on %s", i_count, devname);
                 } else {
-                    snprintf(response, response_size, "1 SetRegs failed for %s", devname);
+                    if (!i2c_device_known(devname)) {
+                        snprintf(response, response_size, "1 Unknown I2C dev %s", devname);
+                    } else if (!i2c_device_probe(devname)) {
+                        snprintf(response, response_size, "1 No I2C ACK from %s", devname);
+                    } else {
+                        snprintf(response, response_size, "1 SetRegs failed for %s", devname);
+                    }
                 }
             }
             break;
@@ -126,27 +187,28 @@ void command_interface_process(const uint8_t *buffer, uint16_t bufsize, char *re
         case 'J': {
             char devname[32] = {0};
             uint8_t j_regs[16], j_vals[16];
-            int j_count = 0;
             char *jp = command + 2;
-            while (*jp == ' ') jp++;
-            int nj = 0;
-            while (*jp && *jp != ' ' && nj < 31) devname[nj++] = *jp++;
-            devname[nj] = '\0';
-            while (*jp && j_count < 16) {
-                while (*jp == ' ') jp++;
-                if (!*jp) break;
-                unsigned int r;
-                if (sscanf(jp, "%u", &r) == 1 && r <= 255) {
-                    j_regs[j_count++] = (uint8_t) r;
-                }
-                while (*jp && *jp != ' ') jp++;
+            int j_count;
+
+            if (parse_devname(&jp, devname, sizeof(devname)) != 0) {
+                snprintf(response, response_size, "1 Missing I2C device name");
+                break;
             }
-            if (j_count == 0) {
-                snprintf(response, response_size, "1 No registers specified");
+
+            j_count = parse_u8_list(&jp, j_regs, 16);
+
+            if (j_count <= 0) {
+                snprintf(response, response_size, "1 Invalid format, expected J <dev> {r1,r2,...}");
             } else if (GetRegs(devname, j_regs, j_count, j_vals) == 0) {
-                int off = snprintf(response, response_size, "0 ");
+                int off = snprintf(response, response_size, "0 {");
                 for (int i = 0; i < j_count && off < (int) response_size - 4; i++) {
-                    off += snprintf(response + off, response_size - (size_t) off, "%u ", j_vals[i]);
+                    off += snprintf(response + off,
+                                    response_size - (size_t) off,
+                                    (i == j_count - 1) ? "%u" : "%u,",
+                                    j_vals[i]);
+                }
+                if (off < (int) response_size - 1) {
+                    snprintf(response + off, response_size - (size_t) off, "}");
                 }
             } else {
                 if (!i2c_device_known(devname)) {

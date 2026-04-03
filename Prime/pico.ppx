@@ -61,6 +61,62 @@ BEGIN
 END;
 
 
+EXPORT GetRegs(devname, regs)
+BEGIN
+  LOCAL cmd;
+  LOCAL recv;
+  LOCAL txt;
+
+  IF TYPE(regs)<>6 THEN
+    RETURN {1,"regs must be a list"};
+  END;
+
+  cmd:="J "+devname+" "+STRING(regs);
+  recv:=Send(cmd);
+
+  IF TYPE(recv)<>6 THEN
+    RETURN {1,"No response"};
+  END;
+
+  txt:=CHAR(recv[2]);
+  IF LEFT(txt,2)=="0 " THEN
+    RETURN {0,EXPR(RIGHT(txt,SIZE(txt)-2))};
+  END;
+
+  RETURN {1,txt};
+END;
+
+
+EXPORT SetRegs(devname, pairs)
+BEGIN
+  LOCAL cmd;
+  LOCAL recv;
+  LOCAL txt;
+
+  IF TYPE(pairs)<>6 THEN
+    RETURN {1,"pairs must be a list"};
+  END;
+
+  IF MOD(SIZE(pairs),2)<>0 THEN
+    RETURN {1,"pairs must be {reg,val,...}"};
+  END;
+
+  cmd:="I "+devname+" "+STRING(pairs);
+  recv:=Send(cmd);
+
+  IF TYPE(recv)<>6 THEN
+    RETURN {1,"No response"};
+  END;
+
+  txt:=CHAR(recv[2]);
+  IF LEFT(txt,2)=="0 " THEN
+    RETURN {0,txt};
+  END;
+
+  RETURN {1,txt};
+END;
+
+
 EXPORT SendUart(msg)
 BEGIN
   // TYPE 2=string, 6=list

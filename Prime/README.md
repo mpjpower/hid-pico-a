@@ -5,6 +5,8 @@
 This project is an ANSI-style serial terminal for HP Prime, implemented in HP PPL.
 It renders a terminal buffer on screen, parses common ANSI escape sequences, and sends HP Prime keyboard input to a remote UART device through the Pico serial API.
 
+Firmware compatibility: this Prime API/doc set targets Pico firmware version `1.0.20`.
+
 ## Current Defaults
 
 - Width: 26
@@ -141,4 +143,37 @@ When alpha is off, supported key ids send:
 ## Files
 
 - terminal.ppx: Main HP PPL terminal program
+- pico.ppx: Pico HID API wrapper (Open, UART, LED, I2C helpers)
 - README.md: This documentation
+
+## Pico API (pico.ppx)
+
+The terminal uses helpers in `pico.ppx` to talk to the Pico HID firmware.
+
+### Core helpers
+
+- `Open()`
+- `PicoVersion()`
+- `LedOn()` / `LedOff()`
+- `SetUartBaudRate(baudrate)`
+- `SendUart(msg)`
+- `ReceiveUartBytes()`
+
+### I2C helpers
+
+- `GetRegs(devname, regs)`
+  - `regs` is a Prime list of register numbers, e.g. `{0,1,20,21}`
+  - Sends command format: `J <devname> {reg,reg,...}`
+  - On success returns `{0,{val,val,...}}`
+  - On failure returns `{1,<error text>}`
+
+- `SetRegs(devname, pairs)`
+  - `pairs` is a single flat Prime list of register/value pairs, e.g. `{0,3,1,16}`
+  - Sends command format: `I <devname> {reg,val,reg,val,...}`
+  - On success returns `{0,<success text>}`
+  - On failure returns `{1,<error text>}`
+
+Examples:
+
+- `SetRegs("tsl2591", {0,3,1,16})`
+- `GetRegs("tsl2591", {0,1,20,21})`
