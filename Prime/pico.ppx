@@ -97,7 +97,7 @@ BEGIN
     RETURN {1,"pairs must be a list"};
   END;
 
-  IF MOD(SIZE(pairs),2)<>0 THEN
+  IF (SIZE(pairs) MOD 2)<>0 THEN
     RETURN {1,"pairs must be {reg,val,...}"};
   END;
 
