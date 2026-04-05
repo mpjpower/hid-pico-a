@@ -148,7 +148,7 @@ BEGIN
 
     // Copy the string to first null
     WHILE (recv[c]<>0) DO
-      msg(SIZE(msg)+1):=recv[c];
+      msg(0):=recv[c];
       c:=c+1;
     END;
   END;
