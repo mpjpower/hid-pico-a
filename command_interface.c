@@ -121,9 +121,9 @@ void command_interface_process(const uint8_t *buffer, uint16_t bufsize, char *re
             if (actual_len > 2) {
                 int data_len = (int) strlen(command + 2);
                 uart_interface_write((const uint8_t *) (command + 2), (size_t) data_len);
-                snprintf(response, response_size, "0 Sent %d bytes to UART", data_len);
+                // snprintf(response, response_size, "0 Sent %d bytes to UART", data_len);
             } else {
-                snprintf(response, response_size, "1 No data to send");
+                // snprintf(response, response_size, "1 No data to send");
             }
             break;
         }
