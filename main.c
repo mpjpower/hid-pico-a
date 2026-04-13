@@ -11,12 +11,14 @@
 
 // UART configuration
 #define BAUD_RATE 115200
+#define UART_START_DELAY_MS 250
 
 int main() {
     board_init();
     led_backend_t led_backend;
 
     // Initialize UART
+    sleep_ms(UART_START_DELAY_MS);
     uart_interface_init(BAUD_RATE);
 
     // Initialize LED backend (CYW43 on Pico W, GPIO fallback otherwise).

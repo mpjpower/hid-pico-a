@@ -55,14 +55,50 @@ static void on_uart_rx(void) {
     }
 }
 
+static void uart_rx_buffer_clear(void) {
+    uint32_t irq_state = save_and_disable_interrupts();
+
+    uart_rx_head = 0;
+    uart_rx_tail = 0;
+    uart_rx_overflow_count = 0;
+
+    restore_interrupts(irq_state);
+}
+
+static void uart_rx_flush_fifo(void) {
+    while (uart_is_readable(UART_ID)) {
+        (void) uart_getc(UART_ID);
+    }
+}
+
+static void uart_rx_clear_all(void) {
+    uart_rx_flush_fifo();
+    uart_rx_buffer_clear();
+}
+
 void uart_interface_init(uint32_t baud_rate) {
     uart_init(UART_ID, baud_rate);
+
+    // During re-init / baud-rate change do not let RX IRQ run on half-configured UART
+    irq_set_enabled(UART0_IRQ, false);
+    uart_set_irq_enables(UART_ID, false, false);
+
     gpio_set_function(UART_TX_PIN, GPIO_FUNC_UART);
+
     gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
+    gpio_pull_up(UART_RX_PIN);
+
     uart_set_format(UART_ID, DATA_BITS, STOP_BITS, PARITY);
+
     uart_set_fifo_enabled(UART_ID, true);
+
+    // Drop any junk collected during startup / reconfiguration
+    uart_rx_clear_all();
+
     irq_set_exclusive_handler(UART0_IRQ, on_uart_rx);
     irq_set_enabled(UART0_IRQ, true);
+
+    // Arm RX only after everything is configured and buffers are clean
     uart_set_irq_enables(UART_ID, true, false);
 }
 
