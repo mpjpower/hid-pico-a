@@ -26,14 +26,14 @@ A Raspberry Pi Pico application that acts as a USB-HID device, responding to ASC
 
 ## Response Format
 
-All command responses begin with a status prefix:
+Command responses begin with a status prefix, except those which send and receive from the UART:
 
 - `0 ` (ASCII 48 then 32): success
 - `1 ` (ASCII 49 then 32): error
 
 Examples:
 
-- `0 Version: 1.0.20`
+- `0 Version: 1.0.22`
 - `0 {45,0,12,0}`
 - `1 No I2C ACK from tsl2591`
 
