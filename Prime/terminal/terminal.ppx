@@ -1,4 +1,4 @@
-// HP Prime PPL ANSI Terminal Application
+// HP Prime PPL ANSI Terminal Application v1.00
 // Emulates a basic ANSI terminal over serial connection
 
 #pragma mode( separator(.,;) integer(h32) )
@@ -11,31 +11,14 @@ EXPORT term_width := 26;
 EXPORT term_height := 15;
 EXPORT font_size := 2;  // 1-3, affects rendering scale
 EXPORT baud_rate := 9600;  // Serial port baud rate
+EXPORT tab_stop_width := 8;
 
-// Color mapping: ANSI 16 colors to HP Prime RGB colors
-// Format: {R, G, B}
+// Cached HP Prime RGB colors for ANSI 16 colors
 // Index map:
 // 0 Black, 1 Red, 2 Green, 3 Yellow, 4 Blue, 5 Magenta, 6 Cyan, 7 Light Gray
 // 8 Dark Gray, 9 Bright Red, 10 Bright Green, 11 Bright Yellow
 // 12 Bright Blue, 13 Bright Magenta, 14 Bright Cyan, 15 White
-LOCAL ansi_colors := {
-  {0, 0, 0},
-  {128, 0, 0},
-  {0, 128, 0},
-  {128, 128, 0},
-  {0, 0, 128},
-  {128, 0, 128},
-  {0, 128, 128},
-  {224, 224, 224},
-  {192, 192, 192},
-  {255, 0, 0},
-  {0, 255, 0},
-  {255, 255, 0},
-  {0, 0, 255},
-  {255, 0, 255},
-  {0, 255, 255},
-  {255, 255, 255}
-};
+LOCAL ansi_rgb := {};
 
 // Numeric-mode key output lookup.
 // Index is HP Prime key id + 1, value is ASCII byte to send, -1 means no mapping.
@@ -98,6 +81,7 @@ LOCAL alpha_upper_outputs := {
 
 // Screen buffer: each cell stores {char, fg_color, bg_color, bold}
 LOCAL screen_buffer := {};
+LOCAL row_head := 0;
 LOCAL cursor_x := 0;
 LOCAL cursor_y := 0;
 LOCAL current_fg := 0;    // Default foreground (black)
@@ -108,35 +92,169 @@ LOCAL pending_shift := 0;
 LOCAL shift_lock := 0;
 LOCAL char_width := 12;
 LOCAL char_height := 16;
+LOCAL screen_dirty := 1;
+LOCAL grob_initialized := 0;
+LOCAL max_visible_cols := 0;
+LOCAL max_visible_rows := 0;
+LOCAL full_redraw_needed := 1;
+LOCAL cursor_dirty := 1;
+LOCAL indicator_dirty := 1;
+LOCAL cursor_prev_x := 0;
+LOCAL cursor_prev_y := 0;
+LOCAL indicator_overlay_width := 48;
+LOCAL graphic_scroll_lines_pending := 0;
+LOCAL terminal_exit_requested := 0;
+// Tracks which rows need to be redrawn (instead of individual cells) to save CPU
+LOCAL dirty_rows := {};
+LOCAL dirty_row_count := 0;
+// Pre-allocated array for ANSI escape parameters to prevent memory GC lags
+LOCAL escape_params := {0,0,0,0,0,0,0,0};
+// How many received bytes may be processed before polling GETKEY again.
+// Keep this small because GETKEY buffer is only 4 keys.
+LOCAL key_poll_rx_slice := 16;
+// Force a screen present when processing crosses a destination terminal-row boundary.
+// Batching is allowed only inside one target row.
+LOCAL render_barrier_requested := 0;
+LOCAL rx_carry := {};
 
-LOCAL buffer_index(x, y)
+LOCAL mark_full_redraw()
 BEGIN
-  RETURN y * term_width + x + 1;
+  full_redraw_needed := 1;
+  graphic_scroll_lines_pending := 0;
+  cursor_dirty := 1;
+  indicator_dirty := 1;
+  screen_dirty := 1;
+  render_barrier_requested := 1;
+  clear_dirty_tracking();
+END;
+
+LOCAL mark_cursor_dirty()
+BEGIN
+  cursor_dirty := 1;
+  screen_dirty := 1;
+END;
+
+LOCAL mark_indicator_dirty()
+BEGIN
+  indicator_dirty := 1;
+  screen_dirty := 1;
+END;
+
+LOCAL mark_render_barrier()
+BEGIN
+  render_barrier_requested := 1;
+END;
+
+LOCAL queue_scroll_up_1_line()
+BEGIN
+  // Keep dirty-cell tracking aligned with the logical buffer scroll
+  shift_dirty_tracking_up_1_line();
+
+  graphic_scroll_lines_pending := graphic_scroll_lines_pending + 1;
+
+  // If too many lines accumulated, perform full redraw
+  IF graphic_scroll_lines_pending >= max_visible_rows THEN
+    mark_full_redraw();
+    RETURN;
+  END;
+
+  cursor_dirty := 1;
+  indicator_dirty := 1;
+  screen_dirty := 1;
+  render_barrier_requested := 1;
+END;
+
+LOCAL clear_dirty_tracking()
+BEGIN
+  LOCAL i;
+  FOR i FROM 1 TO term_height DO
+    dirty_rows(i) := 0;
+  END;
+  dirty_row_count := 0;
+END;
+
+LOCAL mark_row_dirty(y)
+BEGIN
+  IF y >= 0 AND y < term_height THEN
+    IF dirty_rows(y + 1) == 0 THEN
+      dirty_rows(y + 1) := 1;
+      dirty_row_count := dirty_row_count + 1;
+    END;
+    screen_dirty := 1;
+  END;
+END;
+
+LOCAL redraw_dirty_cells()
+BEGIN
+  LOCAL y;
+  FOR y FROM 0 TO term_height - 1 DO
+    IF dirty_rows(y + 1) == 1 THEN
+      draw_row_to_grob(y);
+      dirty_rows(y + 1) := 0;
+      dirty_row_count := dirty_row_count - 1;
+    END;
+  END;
+END;
+
+LOCAL shift_dirty_tracking_up_1_line()
+BEGIN
+  LOCAL i;
+
+  IF dirty_rows(1) == 1 THEN
+    dirty_row_count := dirty_row_count - 1;
+  END;
+
+  FOR i FROM 2 TO term_height DO
+    dirty_rows(i - 1) := dirty_rows(i);
+  END;
+
+  dirty_rows(term_height) := 0;
+END;
+
+LOCAL physical_row(y)
+BEGIN
+  RETURN (row_head + y) MOD term_height;
+END;
+
+LOCAL make_blank_cell()
+BEGIN
+  RETURN 32 + (current_fg * 256) + (current_bg * 4096);
+END;
+
+LOCAL build_blank_row()
+BEGIN
+  RETURN MAKELIST(32 + (current_fg * 256) + (current_bg * 4096), I, 1, term_width);
+END;
+
+LOCAL clear_entire_buffer()
+BEGIN
+  LOCAL y;
+
+  screen_buffer := {};
+  row_head := 0;
+
+  FOR y FROM 1 TO term_height DO
+    screen_buffer(y) := build_blank_row();
+  END;
 END;
 
 LOCAL set_cell(x, y, cell)
 BEGIN
-  screen_buffer(buffer_index(x, y)) := cell;
+  screen_buffer(physical_row(y) + 1, x + 1) := cell;
 END;
 
 LOCAL get_cell(x, y)
 BEGIN
-  RETURN screen_buffer(buffer_index(x, y));
+  RETURN screen_buffer(physical_row(y) + 1, x + 1);
 END;
 
-LOCAL scroll_up_one_line()
+LOCAL scroll_up_1_line()
 BEGIN
-  LOCAL i, j;
+  LOCAL bottom_row_idx;
 
-  FOR j FROM 1 TO term_height - 1 DO
-    FOR i FROM 0 TO term_width - 1 DO
-      set_cell(i, j - 1, get_cell(i, j));
-    END;
-  END;
-
-  FOR i FROM 0 TO term_width - 1 DO
-    set_cell(i, term_height - 1, {32, current_fg, current_bg, 0});
-  END;
+  row_head := (row_head + 1) MOD term_height;
+  bottom_row_idx := physical_row(term_height - 1) + 1;
+  screen_buffer(bottom_row_idx) := build_blank_row();
 END;
 
 LOCAL get_alpha_key_byte(key, shifted)
@@ -182,268 +300,564 @@ LOCAL view_offset_y := 0;
 
 init_terminal()
 BEGIN
-  LOCAL i, j;
-  
   // Initialize serial port
   Pico.Open();
   Pico.SetUartBaudRate(baud_rate);
-  
-  screen_buffer := {};
-  
-  FOR j FROM 0 TO term_height - 1 DO
-    FOR i FROM 0 TO term_width - 1 DO
-      set_cell(i, j, {32, current_fg, current_bg, 0});
-    END;
+
+  // Initialize the graphics buffer once and reuse it throughout the session
+  IF NOT(grob_initialized) THEN
+    DIMGROB_P(G1, 320, 240, 0);
+    grob_initialized := 1;
   END;
-  
-  cursor_x := 0;
-  cursor_y := 0;
+
+  init_color_table();
+
   current_fg := 0;
   current_bg := 15;
   current_bold := 0;
+
+  clear_entire_buffer();
+
+  // Init row-based dirty tracking
+  dirty_rows := MAKELIST(0, I, 1, term_height);
+  dirty_row_count := 0;
+
+  cursor_x := 0;
+  cursor_y := 0;
+  cursor_prev_x := 0;
+  cursor_prev_y := 0;
+
   alpha_mode := 0;
   pending_shift := 0;
   shift_lock := 0;
   view_offset_x := 0;
   view_offset_y := 0;
 
+  graphic_scroll_lines_pending := 0;
+  render_barrier_requested := 0;
+
   calculate_screen_dimensions();
+
+  screen_dirty := 1;
+  full_redraw_needed := 1;
+  cursor_dirty := 1;
+  indicator_dirty := 1;
 END;
 
 // ============================================================================
-// ANSI ESCAPE SEQUENCE PARSING
+// ANSI ESCAPE SEQUENCE PARSING AND INPUT HANDLING
 // ============================================================================
 
-LOCAL parse_uint_or_default(str, default_val)
+LOCAL escape_buf := MAKELIST(0, I, 1, 32);
+LOCAL escape_len := 0;
+LOCAL escape_in_progress := 0;
+LOCAL escape_mode := 0;
+
+LOCAL handle_sgr_sequence(params, param_count)
 BEGIN
-  LOCAL i, ch, value;
+  LOCAL i, code;
 
-  IF SIZE(str) == 0 THEN
-    RETURN default_val;
+  IF param_count == 0 THEN
+    current_fg := 0;
+    current_bg := 15;
+    current_bold := 0;
+    RETURN;
   END;
 
-  value := 0;
-
-  FOR i FROM 1 TO SIZE(str) DO
-    ch := MID(str, i, 1);
-    IF INSTRING("0123456789", ch) == 0 THEN
-      RETURN default_val;
-    END;
-    value := value * 10 + INSTRING("0123456789", ch) - 1;
-  END;
-
-  RETURN value;
-END;
-
-LOCAL parse_positive_uint_or_default(str, default_val)
-BEGIN
-  LOCAL value;
-
-  value := parse_uint_or_default(str, default_val);
-  IF value < 1 THEN
-    RETURN default_val;
-  END;
-
-  RETURN value;
-END;
-
-LOCAL parse_escape_sequence(seq_str)
-BEGIN
-  LOCAL params := {};
-  LOCAL param_str := "";
-  LOCAL i, char, code;
-  
-  // Extract parameters from escape sequence
-  // Format: ESC [ param1 ; param2 ... cmd
-  
-  IF SIZE(seq_str) < 2 THEN RETURN; END;
-  
-  // Parse parameters
-  param_str := MID(seq_str, 2, SIZE(seq_str) - 2);
-  
-  IF SIZE(param_str) == 0 THEN RETURN; END;
-  
-  // Extract command (last character)
-  code := MID(seq_str, SIZE(seq_str), 1);
-  
-  // Parse numeric parameters
-  param_str := LEFT(param_str, SIZE(param_str) - 1);
-  
-  CASE
-    IF code == "m" THEN
-      handle_sgr_sequence(param_str);
-    END;
-    IF code == "H" THEN
-      handle_cursor_position(param_str);
-    END;
-    IF code == "J" THEN
-      handle_clear_screen(param_str);
-    END;
-    IF code == "K" THEN
-      handle_clear_line(param_str);
-    END;
-    IF code == "A" THEN
-      handle_cursor_up(param_str);
-    END;
-    IF code == "B" THEN
-      handle_cursor_down(param_str);
-    END;
-    IF code == "C" THEN
-      handle_cursor_right(param_str);
-    END;
-    IF code == "D" THEN
-      handle_cursor_left(param_str);
-    END;
-    IF code == "P" THEN
-      handle_delete_char(param_str);
-    END;
-  END;
-END;
-
-LOCAL handle_sgr_sequence(param_str)
-BEGIN
-  LOCAL params, p_str, piece, i, code;
-  params := {};
-  p_str := "";
-  
-  // Split parameters by semicolon
-  p_str := param_str;
-  
-  WHILE SIZE(p_str) > 0 DO
-    i := INSTRING(p_str, ";");
-    IF i == 0 THEN i := SIZE(p_str) + 1; END;
-
-    piece := LEFT(p_str, i - 1);
-    code := parse_uint_or_default(piece, 0);
-    params(SIZE(params) + 1) := code;
-    
-    IF i > SIZE(p_str) THEN
-      p_str := "";
-    ELSE
-      p_str := RIGHT(p_str, SIZE(p_str) - i);
-    END;
-  END;
-  
-  // Process SGR codes
-  FOR i FROM 1 TO SIZE(params) DO
+  FOR i FROM 1 TO param_count DO
     code := params(i);
-
     CASE
       IF code == 0 THEN
         current_fg := 0;
         current_bg := 15;
         current_bold := 0;
       END;
-      IF code == 1 THEN
-        current_bold := 1;
-      END;
-      IF code >= 30 AND code <= 37 THEN
-        current_fg := code - 30;
-      END;
-      IF code >= 40 AND code <= 47 THEN
-        current_bg := code - 40;
-      END;
-      IF code >= 90 AND code <= 97 THEN
-        current_fg := code - 90 + 8;
-      END;
-      IF code >= 100 AND code <= 107 THEN
-        current_bg := code - 100 + 8;
-      END;
+      IF code == 1 THEN current_bold := 1; END;
+      IF code >= 30 AND code <= 37 THEN current_fg := code - 30; END;
+      IF code >= 40 AND code <= 47 THEN current_bg := code - 40; END;
+      IF code >= 90 AND code <= 97 THEN current_fg := code - 90 + 8; END;
+      IF code >= 100 AND code <= 107 THEN current_bg := code - 100 + 8; END;
     END;
   END;
 END;
 
-LOCAL handle_cursor_position(param_str)
+LOCAL handle_cursor_position(params, param_count)
 BEGIN
-  LOCAL i, row_str, col_str, row_val, col_val;
+  LOCAL old_x, old_y;
+  LOCAL row_val := 1;
+  LOCAL col_val := 1;
 
-  row_str := "";
-  col_str := "";
-  row_val := 1;
-  col_val := 1;
-
-  i := INSTRING(param_str, ";");
-  IF i == 0 THEN
-    row_val := parse_uint_or_default(param_str, 1);
-  ELSE
-    row_str := LEFT(param_str, i - 1);
-    col_str := RIGHT(param_str, SIZE(param_str) - i);
-    row_val := parse_uint_or_default(row_str, 1);
-    col_val := parse_uint_or_default(col_str, 1);
+  IF param_count >= 1 THEN
+    row_val := params(1);
+    IF row_val == 0 THEN row_val := 1; END;
   END;
+  IF param_count >= 2 THEN
+    col_val := params(2);
+    IF col_val == 0 THEN col_val := 1; END;
+  END;
+
+  old_x := cursor_x;
+  old_y := cursor_y;
 
   cursor_y := row_val - 1;
   cursor_x := col_val - 1;
-  
-  // Clamp to valid range
+
   IF cursor_y < 0 THEN cursor_y := 0; END;
   IF cursor_y >= term_height THEN cursor_y := term_height - 1; END;
   IF cursor_x < 0 THEN cursor_x := 0; END;
   IF cursor_x >= term_width THEN cursor_x := term_width - 1; END;
+
+  IF cursor_x <> old_x OR cursor_y <> old_y THEN
+    mark_cursor_dirty();
+  END;
 END;
 
-LOCAL handle_clear_screen(param_str)
+LOCAL handle_clear_screen(params, param_count)
 BEGIN
-  LOCAL i, j;
-  
-  // Erase display (param_str should be empty or "2")
-  FOR j FROM 0 TO term_height - 1 DO
-    FOR i FROM 0 TO term_width - 1 DO
-      set_cell(i, j, {32, current_fg, current_bg, 0});
+  LOCAL mode;
+  LOCAL x, y;
+  LOCAL blank_cell;
+
+  // ED - Erase in Display
+  // 0 or omitted: erase from cursor to end of screen
+  // 1: erase from start of screen to cursor
+  // 2: erase entire screen
+  mode := 0;
+  IF param_count >= 1 THEN
+    mode := params(1);
+  END;
+
+  blank_cell := make_blank_cell();
+
+  CASE
+    IF mode == 0 THEN
+      // Current row: from cursor to end
+      FOR x FROM cursor_x TO term_width - 1 DO
+        set_cell(x, cursor_y, blank_cell);
+      END;
+
+      // Following rows: whole rows
+      FOR y FROM cursor_y + 1 TO term_height - 1 DO
+        FOR x FROM 0 TO term_width - 1 DO
+          set_cell(x, y, blank_cell);
+        END;
+      END;
     END;
+
+    IF mode == 1 THEN
+      // Previous rows: whole rows
+      FOR y FROM 0 TO cursor_y - 1 DO
+        FOR x FROM 0 TO term_width - 1 DO
+          set_cell(x, y, blank_cell);
+        END;
+      END;
+
+      // Current row: from start to cursor
+      FOR x FROM 0 TO cursor_x DO
+        set_cell(x, cursor_y, blank_cell);
+      END;
+    END;
+
+    IF mode == 2 THEN
+      FOR y FROM 0 TO term_height - 1 DO
+        FOR x FROM 0 TO term_width - 1 DO
+          set_cell(x, y, blank_cell);
+        END;
+      END;
+    END;
+
+    DEFAULT
+      // Unsupported values: treat like ED 0
+      FOR x FROM cursor_x TO term_width - 1 DO
+        set_cell(x, cursor_y, blank_cell);
+      END;
+
+      FOR y FROM cursor_y + 1 TO term_height - 1 DO
+        FOR x FROM 0 TO term_width - 1 DO
+          set_cell(x, y, blank_cell);
+        END;
+      END;
   END;
-  
-  cursor_x := 0;
-  cursor_y := 0;
+
+  mark_full_redraw();
 END;
 
-LOCAL handle_clear_line(param_str)
+LOCAL handle_clear_line(params, param_count)
 BEGIN
-  LOCAL i;
-  
-  // Erase line
-  FOR i FROM 0 TO term_width - 1 DO
-    set_cell(i, cursor_y, {32, current_fg, current_bg, 0});
+  LOCAL mode, x;
+  LOCAL blank_cell;
+
+  // EL - Erase in Line
+  // 0 or omitted: erase from cursor to end of line
+  // 1: erase from start of line to cursor
+  // 2: erase entire line
+  mode := 0;
+  IF param_count >= 1 THEN
+    mode := params(1);
+  END;
+
+  blank_cell := make_blank_cell();
+
+  CASE
+    IF mode == 0 THEN
+      FOR x FROM cursor_x TO term_width - 1 DO
+        set_cell(x, cursor_y, blank_cell);
+      END;
+    END;
+
+    IF mode == 1 THEN
+      FOR x FROM 0 TO cursor_x DO
+        set_cell(x, cursor_y, blank_cell);
+      END;
+    END;
+
+    IF mode == 2 THEN
+      FOR x FROM 0 TO term_width - 1 DO
+        set_cell(x, cursor_y, blank_cell);
+      END;
+    END;
+
+    DEFAULT
+      // Non-standard / unsupported values are treated like EL 0
+      FOR x FROM cursor_x TO term_width - 1 DO
+        set_cell(x, cursor_y, blank_cell);
+      END;
+  END;
+
+  mark_row_dirty(cursor_y);
+END;
+
+LOCAL handle_next_line()
+BEGIN
+  LOCAL old_x, old_y;
+
+  old_x := cursor_x;
+  old_y := cursor_y;
+
+  // ECMA-48 NEL:
+  // move to the line home position of the following line
+  cursor_x := 0;
+  cursor_y := cursor_y + 1;
+
+  IF cursor_x <> old_x OR cursor_y <> old_y THEN
+    mark_cursor_dirty();
   END;
 END;
 
-LOCAL handle_cursor_up(param_str)
+LOCAL handle_cursor_up(params, param_count)
 BEGIN
   LOCAL count := 1;
-  count := parse_positive_uint_or_default(param_str, 1);
+  LOCAL old_y := cursor_y;
+  IF param_count >= 1 AND params(1) > 0 THEN count := params(1); END;
+
   cursor_y := cursor_y - count;
   IF cursor_y < 0 THEN cursor_y := 0; END;
+  IF cursor_y <> old_y THEN mark_cursor_dirty(); END;
 END;
 
-LOCAL handle_cursor_down(param_str)
+LOCAL handle_cursor_down(params, param_count)
 BEGIN
   LOCAL count := 1;
-  count := parse_positive_uint_or_default(param_str, 1);
+  LOCAL old_y := cursor_y;
+  IF param_count >= 1 AND params(1) > 0 THEN count := params(1); END;
+
   cursor_y := cursor_y + count;
   IF cursor_y >= term_height THEN cursor_y := term_height - 1; END;
+  IF cursor_y <> old_y THEN mark_cursor_dirty(); END;
 END;
 
-LOCAL handle_cursor_left(param_str)
+LOCAL handle_cursor_right(params, param_count)
 BEGIN
   LOCAL count := 1;
-  count := parse_positive_uint_or_default(param_str, 1);
-  cursor_x := cursor_x - count;
-  IF cursor_x < 0 THEN cursor_x := 0; END;
-END;
+  LOCAL old_x := cursor_x;
+  IF param_count >= 1 AND params(1) > 0 THEN count := params(1); END;
 
-LOCAL handle_cursor_right(param_str)
-BEGIN
-  LOCAL count := 1;
-  count := parse_positive_uint_or_default(param_str, 1);
   cursor_x := cursor_x + count;
   IF cursor_x >= term_width THEN cursor_x := term_width - 1; END;
+  IF cursor_x <> old_x THEN mark_cursor_dirty(); END;
+END;
+
+LOCAL handle_cursor_left(params, param_count)
+BEGIN
+  LOCAL count := 1;
+  LOCAL old_x := cursor_x;
+  IF param_count >= 1 AND params(1) > 0 THEN count := params(1); END;
+
+  cursor_x := cursor_x - count;
+  IF cursor_x < 0 THEN cursor_x := 0; END;
+  IF cursor_x <> old_x THEN mark_cursor_dirty(); END;
+END;
+
+LOCAL handle_delete_char(params, param_count)
+BEGIN
+  LOCAL count := 1;
+  IF param_count >= 1 AND params(1) > 0 THEN count := params(1); END;
+  delete_chars_at_cursor(count);
+END;
+
+LOCAL parse_escape_sequence()
+BEGIN
+  LOCAL i, b, cmd;
+  LOCAL param_count := 0;
+  LOCAL current_val := -1;
+
+  IF escape_len < 1 THEN
+    RETURN;
+  END;
+
+  cmd := escape_buf(escape_len);
+
+  // Clear reusable parameter buffer without extra allocations
+  FOR i FROM 1 TO 8 DO
+    escape_params(i) := 0;
+  END;
+
+  // SS3 / application cursor keys: ESC O A / B / C / D
+  IF escape_buf(1) == 79 THEN  // 'O'
+    CASE
+      IF cmd == 65 THEN handle_cursor_up(escape_params, 0); END;     // 'A'
+      IF cmd == 66 THEN handle_cursor_down(escape_params, 0); END;   // 'B'
+      IF cmd == 67 THEN handle_cursor_right(escape_params, 0); END;  // 'C'
+      IF cmd == 68 THEN handle_cursor_left(escape_params, 0); END;   // 'D'
+    END;
+    RETURN;
+  END;
+
+  // CSI sequences must start with ESC [
+  IF escape_len < 2 THEN
+    RETURN;
+  END;
+
+  IF escape_buf(1) <> 91 THEN  // '['
+    RETURN;
+  END;
+
+  // Parse numeric parameters between '[' and final command byte
+  FOR i FROM 2 TO escape_len - 1 DO
+    b := escape_buf(i);
+
+    IF b >= 48 AND b <= 57 THEN  // '0'..'9'
+      IF current_val == -1 THEN
+        current_val := 0;
+      END;
+      current_val := current_val * 10 + (b - 48);
+
+    ELSE
+      IF b == 59 THEN  // ';'
+        param_count := param_count + 1;
+        IF param_count <= 8 THEN
+          IF current_val == -1 THEN
+            current_val := 0;
+          END;
+          escape_params(param_count) := current_val;
+        END;
+        current_val := -1;
+      END;
+    END;
+  END;
+
+  IF current_val <> -1 THEN
+    param_count := param_count + 1;
+    IF param_count <= 8 THEN
+      escape_params(param_count) := current_val;
+    END;
+  END;
+
+  CASE
+    IF cmd == 109 THEN handle_sgr_sequence(escape_params, param_count); END;       // 'm'
+    IF cmd == 72 THEN handle_cursor_position(escape_params, param_count); END;     // 'H'
+	IF cmd == 74 THEN handle_clear_screen(escape_params, param_count); END;        // 'J'
+    IF cmd == 75 THEN handle_clear_line(escape_params, param_count); END;          // 'K'
+    IF cmd == 65 THEN handle_cursor_up(escape_params, param_count); END;           // 'A'
+    IF cmd == 66 THEN handle_cursor_down(escape_params, param_count); END;         // 'B'
+    IF cmd == 67 THEN handle_cursor_right(escape_params, param_count); END;        // 'C'
+    IF cmd == 68 THEN handle_cursor_left(escape_params, param_count); END;         // 'D'
+    IF cmd == 80 THEN handle_delete_char(escape_params, param_count); END;         // 'P'
+  END;
+END;
+
+process_input_byte(byte_val)
+BEGIN
+  LOCAL escaped := escape_in_progress;
+  LOCAL old_x, old_y;
+  LOCAL write_x, write_y;
+  LOCAL old_scroll_pending;
+
+  old_x := cursor_x;
+  old_y := cursor_y;
+  old_scroll_pending := graphic_scroll_lines_pending;
+
+  CASE
+    IF byte_val == 27 THEN
+      escape_in_progress := 1;
+      escape_mode := 0;
+      escape_len := 0;
+    END;
+
+    IF byte_val <> 27 AND escaped THEN
+      escape_len := escape_len + 1;
+      IF escape_len <= 32 THEN
+        escape_buf(escape_len) := byte_val;
+      END;
+
+      // First byte after ESC decides the sequence family
+      IF escape_len == 1 THEN
+        CASE
+          IF byte_val == 91 THEN  // '[' => CSI
+            escape_mode := 1;
+          END;
+
+          IF byte_val == 79 THEN  // 'O' => SS3 / application cursor
+            escape_mode := 2;
+          END;
+
+          IF byte_val == 69 THEN  // 'E' => NEL
+            handle_next_line();
+            escape_in_progress := 0;
+            escape_mode := 0;
+          END;
+
+          DEFAULT
+            // Unsupported ESC sequence
+            escape_in_progress := 0;
+            escape_mode := 0;
+  END;
+
+      ELSE
+        // CSI: finish on final byte 0x40..0x7E
+        IF escape_mode == 1 THEN
+          IF byte_val >= 64 AND byte_val <= 126 THEN
+            parse_escape_sequence();
+            escape_in_progress := 0;
+            escape_mode := 0;
+          END;
+        END;
+
+        // SS3: typically ESC O <final>
+        IF escape_mode == 2 THEN
+          parse_escape_sequence();
+          escape_in_progress := 0;
+          escape_mode := 0;
+        END;
+      END;
+    END;
+
+    IF byte_val <> 27 AND NOT(escaped) THEN
+      CASE
+        IF byte_val == 13 THEN
+          cursor_x := 0;
+        END;
+
+        IF byte_val == 10 THEN
+          cursor_y := cursor_y + 1;
+        END;
+
+        IF byte_val == 133 THEN
+          handle_next_line();
+        END;
+
+        IF byte_val == 8 THEN
+          handle_backspace();
+        END;
+
+        IF byte_val == 9 THEN
+          handle_tab();
+        END;
+
+        IF byte_val == 127 THEN
+          // Many peers send DEL for the Backspace key
+          handle_backspace();
+        END;
+
+        IF byte_val >= 32 AND byte_val < 127 THEN
+          write_x := cursor_x;
+          write_y := cursor_y;
+
+          IF write_y < term_height AND write_x < term_width THEN
+            set_cell(
+              write_x,
+              write_y,
+              byte_val + (current_fg * 256) + (current_bg * 4096) + (current_bold * 65536)
+            );
+            mark_row_dirty(write_y);
+          END;
+
+          cursor_x := cursor_x + 1;
+        END;
+      END;
+
+      IF cursor_x >= term_width THEN
+        cursor_x := 0;
+        cursor_y := cursor_y + 1;
+      END;
+
+      IF cursor_y >= term_height THEN
+        scroll_up_1_line();
+        cursor_y := term_height - 1;
+        queue_scroll_up_1_line();
+      END;
+    END;
+  END;
+
+  IF full_redraw_needed THEN
+    mark_render_barrier();
+  END;
+
+  IF graphic_scroll_lines_pending > old_scroll_pending THEN
+    mark_render_barrier();
+  END;
+
+  IF cursor_y <> old_y THEN
+    mark_render_barrier();
+  END;
+
+  IF dirty_row_count > 1 THEN
+    mark_render_barrier();
+  END;
+
+  IF cursor_x <> old_x OR cursor_y <> old_y THEN
+    mark_cursor_dirty();
+  END;
 END;
 
 LOCAL handle_backspace()
 BEGIN
-  cursor_x := cursor_x - 1;
-  IF cursor_x < 0 THEN
+  LOCAL old_x;
+
+  old_x := cursor_x;
+
+  // ECMA-48 BS:
+  // move one character position backward, no deletion
+  IF cursor_x > 0 THEN
+    cursor_x := cursor_x - 1;
+  END;
+
+  IF cursor_x <> old_x THEN
+    mark_cursor_dirty();
+  END;
+END;
+
+LOCAL handle_tab()
+BEGIN
+  LOCAL old_x, old_y;
+  LOCAL next_tab_x;
+
+  old_x := cursor_x;
+  old_y := cursor_y;
+
+  // Move to the next tab stop
+  next_tab_x := (IP(cursor_x / tab_stop_width) + 1) * tab_stop_width;
+
+  IF next_tab_x >= term_width THEN
+    // Simple behavior: wrap to the next line
     cursor_x := 0;
+    cursor_y := cursor_y + 1;
+  ELSE
+    cursor_x := next_tab_x;
+  END;
+
+  IF cursor_x <> old_x OR cursor_y <> old_y THEN
+    mark_cursor_dirty();
   END;
 END;
 
@@ -469,96 +883,36 @@ BEGIN
   END;
 
   FOR i FROM term_width - actual_count TO term_width - 1 DO
-    set_cell(i, cursor_y, {32, current_fg, current_bg, 0});
+    set_cell(i, cursor_y, 32 + (current_fg * 256) + (current_bg * 4096));
   END;
-END;
 
-LOCAL handle_delete_char(param_str)
-BEGIN
-  LOCAL count := 1;
-
-  count := parse_positive_uint_or_default(param_str, 1);
-
-  delete_chars_at_cursor(count);
-END;
-
-// ============================================================================
-// INPUT PROCESSING
-// ============================================================================
-
-LOCAL escape_seq_buffer := "";
-LOCAL escape_in_progress := 0;
-
-process_input_byte(byte_val)
-BEGIN
-  LOCAL escaped := escape_in_progress;
-
-  CASE
-    IF byte_val == 27 THEN
-      // ESC character - start escape sequence
-      escape_in_progress := 1;
-      escape_seq_buffer := "";
-    END;
-    IF byte_val <> 27 AND escaped THEN
-      escape_seq_buffer := escape_seq_buffer + CHAR(byte_val);
-
-      // Check if escape sequence is complete
-      // ESC [ ... letter format
-      IF INSTRING("HJKABCDPefmsu", CHAR(byte_val)) > 0 THEN
-        parse_escape_sequence(escape_seq_buffer);
-        escape_in_progress := 0;
-        escape_seq_buffer := "";
-      END;
-    END;
-    IF byte_val <> 27 AND NOT(escaped) THEN
-      // Normal character
-      CASE
-        IF byte_val == 10 THEN
-          cursor_x := 0;
-          cursor_y := cursor_y + 1;
-        END;
-        IF byte_val == 13 THEN
-          cursor_x := 0;
-        END;
-        IF byte_val == 8 THEN
-          handle_backspace();
-        END;
-        IF byte_val == 127 THEN
-          delete_chars_at_cursor(1);
-        END;
-        IF byte_val >= 32 AND byte_val < 127 THEN
-          IF cursor_y < term_height AND cursor_x < term_width THEN
-            set_cell(cursor_x, cursor_y, {byte_val, current_fg, current_bg, current_bold});
-          END;
-          cursor_x := cursor_x + 1;
-        END;
-      END;
-
-      // Handle line wrap
-      IF cursor_x >= term_width THEN
-        cursor_x := 0;
-        cursor_y := cursor_y + 1;
-      END;
-
-      // Handle vertical scrolling
-      IF cursor_y >= term_height THEN
-        scroll_up_one_line();
-        cursor_y := term_height - 1;
-      END;
-    END;
-  END;
+  mark_row_dirty(cursor_y);
 END;
 
 // ============================================================================
 // RENDERING
 // ============================================================================
 
-LOCAL get_color_rgb(color_index)
+LOCAL init_color_table()
 BEGIN
-  IF color_index >= 0 AND color_index < 16 THEN
-    RETURN ansi_colors(color_index + 1);
-  END;
-  RETURN ansi_colors(8); // Default to dark gray
+  ansi_rgb := {
+    RGB(0, 0, 0),
+    RGB(128, 0, 0),
+    RGB(0, 128, 0),
+    RGB(128, 128, 0),
+    RGB(0, 0, 128),
+    RGB(128, 0, 128),
+    RGB(0, 128, 128),
+    RGB(224, 224, 224),
+    RGB(192, 192, 192),
+    RGB(255, 0, 0),
+    RGB(0, 255, 0),
+    RGB(255, 255, 0),
+    RGB(0, 0, 255),
+    RGB(255, 0, 255),
+    RGB(0, 255, 255),
+    RGB(255, 255, 255)
+  };
 END;
 
 LOCAL calculate_screen_dimensions()
@@ -577,61 +931,62 @@ BEGIN
       char_width := 14;
       char_height := 18;
   END;
+
+  max_visible_cols := MIN(term_width, FLOOR(320 / char_width));
+  max_visible_rows := MIN(term_height, FLOOR(240 / char_height));
 END;
 
-render_terminal()
+LOCAL draw_cell_to_grob(cell_x, cell_y)
 BEGIN
-  LOCAL i, j, cell, char_val, fg_col, bg_col, bold;
-  LOCAL x, y;
-  LOCAL max_cols, max_rows;
+  LOCAL cell, char_val, fg_col, bg_col, bold;
+  LOCAL draw_x, draw_y;
   LOCAL fg_rgb, bg_rgb;
-  LOCAL indicator_text, indicator_width;
+
+  IF cell_x < 0 OR cell_x >= term_width THEN RETURN; END;
+  IF cell_y < 0 OR cell_y >= term_height THEN RETURN; END;
+
+  IF cell_x < view_offset_x OR cell_x >= view_offset_x + max_visible_cols THEN RETURN; END;
+  IF cell_y < view_offset_y OR cell_y >= view_offset_y + max_visible_rows THEN RETURN; END;
+
+  draw_x := (cell_x - view_offset_x) * char_width;
+  draw_y := (cell_y - view_offset_y) * char_height;
+
+  cell := get_cell(cell_x, cell_y);
   
-  DIMGROB_P(G1, 320, 240);
-  RECT_P(G1, 0, 0, 320, 240, #000000h);
-  
-  max_cols := MIN(term_width, FLOOR(320 / char_width));
-  max_rows := MIN(term_height, FLOOR(240 / char_height));
-  
-  // Render buffer
-  FOR j FROM 0 TO max_rows - 1 DO
-    FOR i FROM 0 TO max_cols - 1 DO
-      IF (j + view_offset_y < term_height) AND (i + view_offset_x < term_width) THEN
-        cell := get_cell(i + view_offset_x, j + view_offset_y);
-        char_val := cell(1);
-        fg_col := cell(2);
-        bg_col := cell(3);
-        bold := cell(4);
-        
-        x := i * char_width;
-        y := j * char_height;
-        
-        fg_rgb := get_color_rgb(fg_col);
-        bg_rgb := get_color_rgb(bg_col);
-        
-        // Draw background
-        RECT_P(G1, x, y, x + char_width, y + char_height, 
-               RGB(bg_rgb(1), bg_rgb(2), bg_rgb(3)));
-        
-        // Draw character
-        IF char_val >= 32 AND char_val < 127 THEN
-          TEXTOUT_P(CHAR(char_val), G1, x + 2, y + 2, font_size, 
-                    RGB(fg_rgb(1), fg_rgb(2), fg_rgb(3)));
-        END;
-      END;
-    END;
+  char_val := cell MOD 256;
+  fg_col := IP(cell / 256) MOD 16;
+  bg_col := IP(cell / 4096) MOD 16;
+  bold := IP(cell / 65536) MOD 2;
+
+  fg_rgb := ansi_rgb(fg_col + 1);
+  bg_rgb := ansi_rgb(bg_col + 1);
+
+  RECT_P(G1, draw_x, draw_y, draw_x + char_width, draw_y + char_height, bg_rgb);
+
+  IF char_val >= 32 AND char_val < 127 THEN
+    TEXTOUT_P(CHAR(char_val), G1, draw_x + 2, draw_y + 2, font_size, fg_rgb);
   END;
-  
-  // Draw cursor
-  IF cursor_y - view_offset_y >= 0 AND cursor_y - view_offset_y < max_rows THEN
-    IF cursor_x - view_offset_x >= 0 AND cursor_x - view_offset_x < max_cols THEN
-      x := (cursor_x - view_offset_x) * char_width;
-      y := (cursor_y - view_offset_y) * char_height;
-      RECT_P(G1, x, y, x + char_width, y + char_height, #FFFFFFh, 1);
-    END;
-  END;
+END;
+
+LOCAL draw_cursor_at(cell_x, cell_y)
+BEGIN
+  LOCAL draw_x, draw_y;
+
+  IF cell_x < view_offset_x OR cell_x >= view_offset_x + max_visible_cols THEN RETURN; END;
+  IF cell_y < view_offset_y OR cell_y >= view_offset_y + max_visible_rows THEN RETURN; END;
+
+  draw_x := (cell_x - view_offset_x) * char_width;
+  draw_y := (cell_y - view_offset_y) * char_height;
+
+  RECT_P(G1, draw_x, draw_y, draw_x + char_width, draw_y + char_height, #FFFFFFh, 1);
+END;
+
+LOCAL build_indicator_text()
+BEGIN
+  LOCAL indicator_text;
 
   indicator_text := "";
+
   IF alpha_mode THEN
     IF pending_shift OR shift_lock THEN
       indicator_text := "A";
@@ -654,89 +1009,310 @@ BEGIN
     END;
   END;
 
+  RETURN indicator_text;
+END;
+
+LOCAL draw_indicator()
+BEGIN
+  LOCAL indicator_text, indicator_width;
+  LOCAL overlay_x1, overlay_x2;
+  LOCAL i, cell_left, cell_right;
+
+  overlay_x2 := 319;
+  overlay_x1 := 320 - indicator_overlay_width;
+
+  // Redraw only the cells under the indicator overlay area in the first visible row.
+  IF max_visible_rows > 0 THEN
+    FOR i FROM 0 TO max_visible_cols - 1 DO
+      cell_left := i * char_width;
+      cell_right := cell_left + char_width - 1;
+
+      IF cell_right >= overlay_x1 AND cell_left <= overlay_x2 THEN
+        draw_cell_to_grob(i + view_offset_x, view_offset_y);
+      END;
+    END;
+  END;
+
+  indicator_text := build_indicator_text();
+
   IF SIZE(indicator_text) > 0 THEN
     indicator_width := 8 + SIZE(indicator_text) * 8;
     RECT_P(G1, 320 - indicator_width, 0, 319, 14, #202020h);
     TEXTOUT_P(indicator_text, G1, 320 - indicator_width + 4, 2, 1, #00FF00h);
   END;
-  
+END;
+
+LOCAL draw_row_to_grob(row_y)
+BEGIN
+  LOCAL i;
+
+  IF row_y < 0 OR row_y >= term_height THEN
+    RETURN;
+  END;
+
+  FOR i FROM view_offset_x TO view_offset_x + max_visible_cols - 1 DO
+    IF i < term_width THEN
+      draw_cell_to_grob(i, row_y);
+    END;
+  END;
+END;
+
+LOCAL render_full_terminal()
+BEGIN
+  LOCAL i, j;
+
+  FOR j FROM view_offset_y TO view_offset_y + max_visible_rows - 1 DO
+    FOR i FROM view_offset_x TO view_offset_x + max_visible_cols - 1 DO
+      IF i < term_width AND j < term_height THEN
+        draw_cell_to_grob(i, j);
+      END;
+    END;
+  END;
+
+  draw_cursor_at(cursor_x, cursor_y);
+  draw_indicator();
+
+  cursor_prev_x := cursor_x;
+  cursor_prev_y := cursor_y;
+END;
+
+LOCAL perform_graphic_scroll_up(scroll_lines)
+BEGIN
+  LOCAL scroll_px;
+  LOCAL first_redraw_row, last_redraw_row, row_y;
+
+  IF scroll_lines < 1 THEN
+    RETURN;
+  END;
+
+  scroll_px := scroll_lines * char_height;
+
+  // If the scroll amount is too large, fallback should already have been requested
+  IF scroll_px >= 240 THEN
+    mark_full_redraw();
+    RETURN;
+  END;
+
+  // Remove old cursor outline before shifting pixels, otherwise it would be scrolled as content
+  draw_cell_to_grob(cursor_prev_x, cursor_prev_y);
+
+  // Note:
+  // BLIT_P skips the last source column/row, so we intentionally use 320 and 240
+  // as exclusive right/bottom bounds of the source rectangle.
+  BLIT_P(G1, 0, 0, G1, 0, scroll_px, 320, 240);
+
+  // Clear the newly uncovered bottom band
+  RECT_P(G1, 0, 240 - scroll_px, 319, 239, 0);
+
+  // Redraw only the newly exposed visible rows at the bottom
+  first_redraw_row := view_offset_y + max_visible_rows - scroll_lines;
+  last_redraw_row := view_offset_y + max_visible_rows - 1;
+
+  IF first_redraw_row < view_offset_y THEN
+    first_redraw_row := view_offset_y;
+  END;
+
+  FOR row_y FROM first_redraw_row TO last_redraw_row DO
+    draw_row_to_grob(row_y);
+  END;
+END;
+
+LOCAL present_terminal()
+BEGIN
+  LOCAL had_dirty_cells := dirty_row_count > 0;
+  LOCAL had_graphic_scroll := graphic_scroll_lines_pending > 0;
+
+  IF full_redraw_needed THEN
+    render_full_terminal();
+    clear_dirty_tracking();
+
+    full_redraw_needed := 0;
+    graphic_scroll_lines_pending := 0;
+    cursor_dirty := 0;
+    indicator_dirty := 0;
+  ELSE
+    // If a graphic scroll is pending, apply it first
+    IF had_graphic_scroll THEN
+      perform_graphic_scroll_up(graphic_scroll_lines_pending);
+      graphic_scroll_lines_pending := 0;
+    ELSE
+      // No scroll: only erase the old cursor if it moved
+      IF cursor_dirty THEN
+        IF cursor_prev_x <> cursor_x OR cursor_prev_y <> cursor_y THEN
+          draw_cell_to_grob(cursor_prev_x, cursor_prev_y);
+        END;
+      END;
+    END;
+
+    // Redraw locally changed cells
+    IF had_dirty_cells THEN
+      redraw_dirty_cells();
+    END;
+
+    // Cursor must be drawn after cell redraw and after graphic scroll
+    IF cursor_dirty OR had_dirty_cells OR had_graphic_scroll THEN
+      draw_cursor_at(cursor_x, cursor_y);
+      cursor_prev_x := cursor_x;
+      cursor_prev_y := cursor_y;
+      cursor_dirty := 0;
+    END;
+
+    // Indicator is an overlay, so draw it last
+    IF indicator_dirty OR had_graphic_scroll THEN
+      draw_indicator();
+      indicator_dirty := 0;
+    END;
+  END;
+
   BLIT_P(G0, G1);
+
+  screen_dirty := 0;
 END;
 
 // ============================================================================
 // MAIN TERMINAL LOOP
 // ============================================================================
 
-run_terminal()
+LOCAL drain_keyboard()
 BEGIN
-  LOCAL key, byte_val, bytes, i, send_byte, shifted, arrow_code, outgoing_bytes;
-  LOCAL running := 1;
-  
-  init_terminal();
-  
-  WHILE running DO
-    // Receive data from serial
-    bytes := Pico.ReceiveUartBytes();
-    FOR i FROM 1 TO SIZE(bytes) DO
-      process_input_byte(bytes(i));
-    END;
-    
-    // Render screen
-    render_terminal();
-    
-    // Check for user input
-    outgoing_bytes := {};
-    key := GETKEY();
+  LOCAL key, send_byte, shifted, arrow_code, outgoing_bytes;
+  LOCAL had_pending_shift;
 
-    WHILE key >= 0 DO
-      CASE
-        IF key == 13 THEN  // HP Prime Menu key: exit terminal
-          running := 0;
-        END;
-        IF key == 36 THEN  // HP Prime Alpha key: toggle alpha lock
-          alpha_mode := 1 - alpha_mode;
-          pending_shift := 0;
-        END;
-        IF key == 41 THEN  // HP Prime Shift key: one-shot shift, double-tap toggles shift lock
-          IF pending_shift THEN
-            shift_lock := 1 - shift_lock;
-            pending_shift := 0;
-          ELSE
-            pending_shift := 1;
-          END;
-        END;
-        DEFAULT
-          send_byte := -1;
-          arrow_code := get_arrow_sequence_code(key);
+  outgoing_bytes := {};
+  key := GETKEY();
 
-          IF arrow_code >= 0 THEN
-            pending_shift := 0;
-            outgoing_bytes := CONCAT(outgoing_bytes, {27, 91, arrow_code});
-          ELSE
-            shifted := pending_shift OR shift_lock;
-
-            IF alpha_mode THEN
-              send_byte := get_alpha_key_byte(key, shifted);
-            ELSE
-              send_byte := get_numeric_key_byte(key, shifted);
-            END;
-
-            IF send_byte >= 0 THEN
-              outgoing_bytes := CONCAT(outgoing_bytes, {send_byte});
-            ELSE
-              outgoing_bytes := CONCAT(outgoing_bytes, {key});
-            END;
-
-            pending_shift := 0;
-          END;
+  WHILE key >= 0 DO
+    CASE
+      IF key == 13 THEN  // HP Prime Menu key: exit terminal
+        terminal_exit_requested := 1;
       END;
 
-      key := GETKEY();
+      IF key == 36 THEN  // HP Prime Alpha key: toggle alpha lock
+        alpha_mode := 1 - alpha_mode;
+        pending_shift := 0;
+        mark_indicator_dirty();
+      END;
+
+      IF key == 41 THEN  // HP Prime Shift key: one-shot shift, double-tap toggles shift lock
+        IF pending_shift THEN
+          shift_lock := 1 - shift_lock;
+          pending_shift := 0;
+        ELSE
+          pending_shift := 1;
+        END;
+        mark_indicator_dirty();
+      END;
+
+      DEFAULT
+        send_byte := -1;
+        arrow_code := get_arrow_sequence_code(key);
+
+        IF arrow_code >= 0 THEN
+          had_pending_shift := pending_shift;
+          pending_shift := 0;
+
+          IF had_pending_shift THEN
+            mark_indicator_dirty();
+          END;
+
+          outgoing_bytes := CONCAT(outgoing_bytes, {27, 91, arrow_code});
+        ELSE
+          shifted := pending_shift OR shift_lock;
+
+          IF alpha_mode THEN
+            send_byte := get_alpha_key_byte(key, shifted);
+          ELSE
+            send_byte := get_numeric_key_byte(key, shifted);
+          END;
+
+          had_pending_shift := pending_shift;
+          pending_shift := 0;
+
+          IF had_pending_shift THEN
+            mark_indicator_dirty();
+          END;
+
+          IF send_byte >= 0 THEN
+            outgoing_bytes := CONCAT(outgoing_bytes, {send_byte});
+          ELSE
+            outgoing_bytes := CONCAT(outgoing_bytes, {key});
+          END;
+        END;
     END;
 
+    key := GETKEY();
+  END;
+
+  RETURN outgoing_bytes;
+END;
+
+run_terminal()
+BEGIN
+  LOCAL bytes, new_bytes, outgoing_bytes;
+  LOCAL num_bytes, i, k;
+  LOCAL flow_paused := 0;
+
+  // Flow control ASCII codes
+  LOCAL XON_CHAR  := 17; // Resume transmission
+  LOCAL XOFF_CHAR := 19; // Pause transmission
+
+  init_terminal();
+  terminal_exit_requested := 0;
+
+  WHILE NOT(terminal_exit_requested) DO
+
+    // Drain pending keyboard input
+    outgoing_bytes := drain_keyboard();
     IF SIZE(outgoing_bytes) > 0 THEN
       Pico.SendUart(outgoing_bytes);
     END;
+
+    // Start with deferred bytes from previous iteration
+    bytes := rx_carry;
+    rx_carry := {};
+
+    // Read fresh UART bytes and append them
+    new_bytes := Pico.ReceiveUartBytes();
+    IF SIZE(new_bytes) > 0 THEN
+      bytes := CONCAT(bytes, new_bytes);
+    END;
+
+    num_bytes := SIZE(bytes);
+    flow_paused := 0;
+
+    IF num_bytes > 0 THEN
+
+      // Stop sender while building one visible frame
+      Pico.SendUart({XOFF_CHAR});
+      flow_paused := 1;
+
+      // Process only until the first render barrier
+      FOR i FROM 1 TO num_bytes DO
+        process_input_byte(bytes(i));
+
+        IF render_barrier_requested THEN
+
+          // Keep the unprocessed tail for the next outer-loop iteration
+          IF i < num_bytes THEN
+            rx_carry := MAKELIST(bytes(k), k, i + 1, num_bytes);
+          END;
+
+          BREAK;
+        END;
+      END;
+    END;
+
+    // Present at most one frame per outer-loop iteration
+    IF screen_dirty THEN
+      present_terminal();
+      render_barrier_requested := 0;
+    END;
+
+    // Resume sender only after the frame was actually shown
+    IF flow_paused THEN
+      Pico.SendUart({XON_CHAR});
+    END;
+
   END;
 END;
 
