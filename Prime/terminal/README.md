@@ -17,12 +17,13 @@ to a remote UART device through the Pico serial API (`pico.ppx`).
 
 ## Current defaults
 
-| Setting    | Value  |
-|------------|--------|
-| Width      | 26 cols |
-| Height     | 15 rows |
-| Font size  | 2      |
-| Baud rate  | 9600   |
+| Setting             | Value   |
+|---------------------|---------|
+| Width               | 26 cols |
+| Height              | 15 rows |
+| Font size           | 2       |
+| Baud rate           | 9600    |
+| Tab stop width      | 8 cols  |
 
 ## Main flow
 
@@ -34,9 +35,17 @@ Pico.SetUartBaudRate(baud_rate)
 ```
 
 Then enters a loop that:
-1. Calls `Pico.ReceiveUartBytes()` and feeds each byte through the ANSI processor.
-2. Renders the screen buffer.
-3. Reads HP Prime key presses, converts them to bytes/sequences, and calls `Pico.SendUart()`.
+1. Drains pending HP Prime key presses and sends the resulting byte stream with Pico.SendUart().
+2. Collects deferred RX bytes from the previous iteration (rx_carry) and appends fresh bytes from Pico.ReceiveUartBytes().
+3. Sends XOFF (19) before processing a visible RX chunk.
+4. Feeds incoming bytes through the terminal parser until a render barrier is reached.
+5. Keeps any unprocessed RX tail for the next iteration.
+6. Renders at most one frame per loop iteration.
+7. Sends XON (17) after the frame is presented.
+
+## Performance / flow control
+
+Incoming UART data may be processed in chunks rather than all at once. When a render barrier is reached, remaining bytes are deferred to the next loop iteration (rx_carry) so the UI remains responsive.
 
 ## Settings UI
 
@@ -49,35 +58,52 @@ One `INPUT` dialog with four fields:
 
 ## Terminal behaviour
 
+- Disables HP Prime screen dimming and auto-sleep timeouts (`TDim`, `TOff`) while the terminal is active, restoring them upon exit.
 - Per-cell screen buffer stores character, fg colour, bg colour, bold flag.
 - Automatic line wrapping.
 - Vertical scrolling when cursor moves below the last row.
 - 16-colour ANSI palette.
 - Off-screen rendering into `G1`, blitted to `G0` with `BLIT_P`.
+- Dirty-row tracking is used to redraw only rows that changed.
+- Scroll operations may be rendered using a graphic scroll of the existing framebuffer, followed by redraw of the newly exposed rows.
 - Cursor drawn as a white rectangle outline.
 
 ## Supported ANSI sequences
 
-| Sequence             | Action                              |
-|----------------------|-------------------------------------|
-| `ESC [ row ; col H`  | Cursor position                     |
-| `ESC [ 2 J`          | Clear screen                        |
-| `ESC [ K`            | Clear to end of line                |
-| `ESC [ A/B/C/D`      | Cursor up / down / right / left     |
-| `ESC [ P`            | Delete character at cursor          |
-| `ESC [ n P`          | Delete n characters at cursor       |
-| `ESC [ … m`          | SGR — reset, bold, 16-colour fg/bg  |
+| Sequence             | Action                               |
+|----------------------|--------------------------------------|
+| `ESC [ row ; col H`  | Cursor position                      |
+| `ESC [ J`            | Clear from cursor to end of screen   |
+| `ESC [ 1 J`          | Clear from start of screen to cursor |
+| `ESC [ 2 J`          | Clear entire screen                  |
+| `ESC [ K`            | Clear from cursor to end of line     |
+| `ESC [ 1 K`          | Clear from start of line to cursor   |
+| `ESC [ 2 K`          | Clear entire current line            |
+| `ESC [ A/B/C/D`      | Cursor up / down / right / left      |
+| `ESC [ P`            | Delete character at cursor           |
+| `ESC [ n P`          | Delete n characters at cursor        |
+| `ESC [ … m`          | SGR — reset, bold, 16-colour fg/bg   |
 
 SGR codes handled: `0`, `1`, `30–37`, `40–47`, `90–97`, `100–107`.
 
+Application cursor-key sequences ESC O A/B/C/D are also accepted and mapped to cursor movement.
+
 ## Control characters
 
-| Byte       | Action                                |
-|------------|---------------------------------------|
-| LF (10)    | Move to next line                     |
-| CR (13)    | Carriage return (column 0)            |
-| BS (8)     | Backspace (move cursor left)          |
-| DEL (127)  | Delete at cursor (shift line left)    |
+| Byte       | Action                                                 |
+|------------|--------------------------------------------------------|
+| LF (10)    | Line feed: move to the same column on the next line    |
+| CR (13)    | Carriage return: move to column 0 of the current line  |
+| NEL (133)  | Next line: move to column 0 of the next line           |
+| ESC E      | 7-bit representation of NEL                            |
+| BS (8)     | Backspace (move cursor left)                           |
+| TAB (9)    | Move cursor to next tab stop (default every 8 columns) |
+
+### Compatibility behavior
+
+| Byte      | Action                                                      |
+|-----------|-------------------------------------------------------------|
+| DEL (127) | Treated as destructive backspace for terminal compatibility |
 
 ## HP Prime keyboard mapping
 
