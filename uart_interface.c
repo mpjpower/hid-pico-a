@@ -16,15 +16,35 @@
 #define UART_RX_PIN 1
 
 // UART RX ring buffer size. Must be a power of two.
-#define UART_RX_BUFFER_SIZE 1024
+#define UART_RX_BUFFER_SIZE 2048u
+
+// Software flow control bytes sent towards the PC side over UART.
+#define UART_FLOW_XON  0x11u
+#define UART_FLOW_XOFF 0x13u
+
+// Hysteresis thresholds for RX backpressure.
+// Send XOFF when the buffer reaches HIGH.
+// Send XON only after draining back to LOW.
+#define UART_RX_HIGH_WATERMARK 1536u
+#define UART_RX_LOW_WATERMARK  512u
 
 static volatile uint16_t uart_rx_head = 0;
 static volatile uint16_t uart_rx_tail = 0;
 static volatile uint32_t uart_rx_overflow_count = 0;
+static volatile bool uart_rx_flow_paused = false;
 static uint8_t uart_rx_buffer[UART_RX_BUFFER_SIZE];
 
 static inline bool uart_rx_buffer_is_empty(void) {
     return uart_rx_head == uart_rx_tail;
+}
+
+static inline uint16_t uart_rx_buffer_count_unsafe(void) {
+    return (uint16_t) ((uart_rx_head - uart_rx_tail) & (UART_RX_BUFFER_SIZE - 1u));
+}
+
+static inline void uart_send_flow_control_byte(uint8_t ch) {
+    // One control byte, state change happens rarely.
+    uart_write_blocking(UART_ID, &ch, 1);
 }
 
 static inline void uart_rx_buffer_push(uint8_t ch) {
@@ -49,9 +69,21 @@ static inline int uart_rx_buffer_pop(uint8_t *ch) {
     return 1;
 }
 
+static inline void uart_rx_pause_sender_if_needed(void) {
+    if (!uart_rx_flow_paused &&
+        uart_rx_buffer_count_unsafe() >= UART_RX_HIGH_WATERMARK) {
+        uart_rx_flow_paused = true;
+		// DEBUG message
+		uart_interface_write_string("\r\n[### XOFF ###]\r\n");
+ 
+        uart_send_flow_control_byte(UART_FLOW_XOFF);
+    }
+}
+
 static void on_uart_rx(void) {
     while (uart_is_readable(UART_ID)) {
         uart_rx_buffer_push((uint8_t) uart_getc(UART_ID));
+        uart_rx_pause_sender_if_needed();
     }
 }
 
@@ -61,6 +93,7 @@ static void uart_rx_buffer_clear(void) {
     uart_rx_head = 0;
     uart_rx_tail = 0;
     uart_rx_overflow_count = 0;
+    uart_rx_flow_paused = false;
 
     restore_interrupts(irq_state);
 }
@@ -121,11 +154,29 @@ size_t uart_interface_read(uint8_t *out, size_t max_len) {
     }
 
     size_t len = 0;
+    bool send_xon = false;
+
     uint32_t irq_state = save_and_disable_interrupts();
+
     while (len < max_len && uart_rx_buffer_pop(&out[len])) {
         len++;
     }
+
+    if (uart_rx_flow_paused &&
+        uart_rx_buffer_count_unsafe() <= UART_RX_LOW_WATERMARK) {
+        uart_rx_flow_paused = false;
+        send_xon = true;
+    }
+
     restore_interrupts(irq_state);
+
+    if (send_xon) {
+		// DEBUG message
+		uart_interface_write_string("\r\n[### XON ###]\r\n");
+
+        uart_send_flow_control_byte(UART_FLOW_XON);
+    }
+
     return len;
 }
 

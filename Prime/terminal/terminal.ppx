@@ -1,4 +1,4 @@
-// HP Prime PPL ANSI Terminal Application v1.01
+// HP Prime PPL ANSI Terminal Application v1.02
 // Emulates a basic ANSI terminal over serial connection
 
 #pragma mode( separator(.,;) integer(h32) )
@@ -8,10 +8,10 @@
 // ============================================================================
 
 EXPORT term_width := 26;
-EXPORT term_height := 15;
+EXPORT term_height := 17;
 EXPORT font_size := 2;  // 1-3, affects rendering scale
 EXPORT baud_rate := 9600;  // Serial port baud rate
-EXPORT tab_stop_width := 8;
+EXPORT tab_stop_width := 4;
 
 // Cached HP Prime RGB colors for ANSI 16 colors
 // Index map:
@@ -99,7 +99,7 @@ LOCAL alpha_upper_outputs := {
 // ============================================================================
 
 // Screen buffer: each cell stores {char, fg_color, bg_color, bold}
-LOCAL screen_buffer := {};
+LOCAL screen_buffer;
 LOCAL row_head := 0;
 LOCAL cursor_x := 0;
 LOCAL cursor_y := 0;
@@ -120,6 +120,7 @@ LOCAL cursor_dirty := 1;
 LOCAL indicator_dirty := 1;
 LOCAL cursor_prev_x := 0;
 LOCAL cursor_prev_y := 0;
+LOCAL cursor_visible := 0;
 LOCAL indicator_overlay_width := 48;
 LOCAL graphic_scroll_lines_pending := 0;
 LOCAL terminal_exit_requested := 0;
@@ -135,6 +136,13 @@ LOCAL key_poll_rx_slice := 16;
 // Batching is allowed only inside one target row.
 LOCAL render_barrier_requested := 0;
 LOCAL rx_carry := {};
+LOCAL uart_poll_active_ms := 20;
+LOCAL uart_poll_idle_ms := 50;
+LOCAL next_uart_poll_tick := 0;
+
+// Viewport offset for panning
+LOCAL view_offset_x := 0;
+LOCAL view_offset_y := 0;
 
 LOCAL mark_full_redraw()
 BEGIN
@@ -242,19 +250,16 @@ END;
 
 LOCAL build_blank_row()
 BEGIN
-  RETURN MAKELIST(32 + (current_fg * 256) + (current_bg * 4096), I, 1, term_width);
+  RETURN MAKEMAT(32 + (current_fg * 256) + (current_bg * 4096), term_width); //  MAKELIST(32 + (current_fg * 256) + (current_bg * 4096), I, 1, term_width);
 END;
 
 LOCAL clear_entire_buffer()
 BEGIN
-  LOCAL y;
+  LOCAL blank_cell;
 
-  screen_buffer := {};
+  blank_cell := make_blank_cell();
+  screen_buffer := MAKEMAT(blank_cell, term_height, term_width);
   row_head := 0;
-
-  FOR y FROM 1 TO term_height DO
-    screen_buffer(y) := build_blank_row();
-  END;
 END;
 
 LOCAL set_cell(x, y, cell)
@@ -307,60 +312,6 @@ BEGIN
   END;
 
   RETURN -1;
-END;
-
-// Viewport offset for panning
-LOCAL view_offset_x := 0;
-LOCAL view_offset_y := 0;
-
-// ============================================================================
-// INITIALIZATION
-// ============================================================================
-
-init_terminal()
-BEGIN
-  // Initialize serial port
-  Pico.Open();
-  Pico.SetUartBaudRate(baud_rate);
-
-  // Initialize the graphics buffer once and reuse it throughout the session
-  IF NOT(grob_initialized) THEN
-    DIMGROB_P(G1, 320, 240, 0);
-    grob_initialized := 1;
-  END;
-
-  init_color_table();
-
-  current_fg := 0;
-  current_bg := 15;
-  current_bold := 0;
-
-  clear_entire_buffer();
-
-  // Init row-based dirty tracking
-  dirty_rows := MAKELIST(0, I, 1, term_height);
-  dirty_row_count := 0;
-
-  cursor_x := 0;
-  cursor_y := 0;
-  cursor_prev_x := 0;
-  cursor_prev_y := 0;
-
-  alpha_mode := 0;
-  pending_shift := 0;
-  shift_lock := 0;
-  view_offset_x := 0;
-  view_offset_y := 0;
-
-  graphic_scroll_lines_pending := 0;
-  render_barrier_requested := 0;
-
-  calculate_screen_dimensions();
-
-  screen_dirty := 1;
-  full_redraw_needed := 1;
-  cursor_dirty := 1;
-  indicator_dirty := 1;
 END;
 
 // ============================================================================
@@ -937,19 +888,8 @@ END;
 LOCAL calculate_screen_dimensions()
 BEGIN
   // Font sizes: approximate character dimensions
-  CASE
-    IF font_size == 1 THEN
-      char_width := 10;
-      char_height := 14;
-    END;
-    IF font_size == 2 THEN
-      char_width := 12;
-      char_height := 16;
-    END;
-    DEFAULT
-      char_width := 14;
-      char_height := 18;
-  END;
+  {'char_width','char_height'} := TEXTSIZE("Ａ",font_size);
+  char_height := char_height + 2;
 
   max_visible_cols := MIN(term_width, FLOOR(320 / char_width));
   max_visible_rows := MIN(term_height, FLOOR(240 / char_height));
@@ -979,25 +919,83 @@ BEGIN
 
   fg_rgb := ansi_rgb(fg_col + 1);
   bg_rgb := ansi_rgb(bg_col + 1);
-
-  RECT_P(G1, draw_x, draw_y, draw_x + char_width, draw_y + char_height, bg_rgb);
-
-  IF char_val >= 32 AND char_val < 127 THEN
-    TEXTOUT_P(CHAR(char_val), G1, draw_x + 2, draw_y + 2, font_size, fg_rgb);
+  RECT_P(G1, draw_x, draw_y, draw_x + char_width, draw_y + char_height + 1, bg_rgb);
+  IF char_val > 32 AND char_val < 127 THEN
+    TEXTOUT_P(CHAR(char_val+65248), G1, draw_x, draw_y, font_size, fg_rgb, 30, bg_rgb);
   END;
 END;
 
-LOCAL draw_cursor_at(cell_x, cell_y)
+LOCAL cursor_hits_indicator(cell_x, cell_y)
+BEGIN
+  LOCAL indicator_text, indicator_width;
+  LOCAL overlay_x1, overlay_x2;
+  LOCAL draw_x, draw_x2;
+
+  // The indicator overlay can appear only on the first visible row.
+  IF cell_y <> view_offset_y THEN
+    RETURN 0;
+  END;
+
+  indicator_text := build_indicator_text();
+
+  IF SIZE(indicator_text) == 0 THEN
+    RETURN 0;
+  END;
+
+  indicator_width := 8 + SIZE(indicator_text) * 8;
+  overlay_x2 := 319;
+  overlay_x1 := 320 - indicator_width;
+
+  draw_x := (cell_x - view_offset_x) * char_width;
+  draw_x2 := draw_x + char_width - 1;
+
+  IF draw_x2 >= overlay_x1 AND draw_x <= overlay_x2 THEN
+    RETURN 1;
+  END;
+
+  RETURN 0;
+END;
+
+LOCAL invert_cursor_at(cell_x, cell_y)
 BEGIN
   LOCAL draw_x, draw_y;
 
-  IF cell_x < view_offset_x OR cell_x >= view_offset_x + max_visible_cols THEN RETURN; END;
-  IF cell_y < view_offset_y OR cell_y >= view_offset_y + max_visible_rows THEN RETURN; END;
+  IF cell_x < view_offset_x OR cell_x >= view_offset_x + max_visible_cols THEN
+    RETURN 0;
+  END;
+
+  IF cell_y < view_offset_y OR cell_y >= view_offset_y + max_visible_rows THEN
+    RETURN 0;
+  END;
 
   draw_x := (cell_x - view_offset_x) * char_width;
   draw_y := (cell_y - view_offset_y) * char_height;
 
-  RECT_P(G1, draw_x, draw_y, draw_x + char_width, draw_y + char_height, #FFFFFFh, 1);
+  INVERT_P(G1, draw_x, draw_y - 1, draw_x + char_width - 1, draw_y + char_height);
+  RETURN 1;
+END;
+
+LOCAL hide_cursor()
+BEGIN
+  IF cursor_visible THEN
+    invert_cursor_at(cursor_prev_x, cursor_prev_y);
+    cursor_visible := 0;
+  END;
+END;
+
+LOCAL show_cursor()
+BEGIN
+  cursor_prev_x := cursor_x;
+  cursor_prev_y := cursor_y;
+
+  // Do not draw the cursor under the indicator overlay.
+  IF cursor_hits_indicator(cursor_x, cursor_y) THEN
+    cursor_visible := 0;
+  ELSE
+    cursor_visible := invert_cursor_at(cursor_x, cursor_y);
+  END;
+
+  cursor_dirty := 0;
 END;
 
 LOCAL build_indicator_text()
@@ -1087,12 +1085,6 @@ BEGIN
       END;
     END;
   END;
-
-  draw_cursor_at(cursor_x, cursor_y);
-  draw_indicator();
-
-  cursor_prev_x := cursor_x;
-  cursor_prev_y := cursor_y;
 END;
 
 LOCAL perform_graphic_scroll_up(scroll_lines)
@@ -1106,24 +1098,24 @@ BEGIN
 
   scroll_px := scroll_lines * char_height;
 
-  // If the scroll amount is too large, fallback should already have been requested
+  // If the scroll amount is too large, a full redraw should be used instead.
   IF scroll_px >= 240 THEN
     mark_full_redraw();
     RETURN;
   END;
 
-  // Remove old cursor outline before shifting pixels, otherwise it would be scrolled as content
-  draw_cell_to_grob(cursor_prev_x, cursor_prev_y);
+  // The cursor must already be hidden before entering this function.
+  // BLIT_P must not move the inverted cursor together with the content.
 
   // Note:
-  // BLIT_P skips the last source column/row, so we intentionally use 320 and 240
-  // as exclusive right/bottom bounds of the source rectangle.
+  // BLIT_P skips the last source column and row, so 320 and 240 are used
+  // as exclusive right and bottom bounds of the source rectangle.
   BLIT_P(G1, 0, 0, G1, 0, scroll_px, 320, 240);
 
-  // Clear the newly uncovered bottom band
+  // Clear the newly uncovered bottom band.
   RECT_P(G1, 0, 240 - scroll_px, 319, 239, 0);
 
-  // Redraw only the newly exposed visible rows at the bottom
+  // Redraw only the newly exposed visible rows at the bottom.
   first_redraw_row := view_offset_y + max_visible_rows - scroll_lines;
   last_redraw_row := view_offset_y + max_visible_rows - 1;
 
@@ -1141,47 +1133,39 @@ BEGIN
   LOCAL had_dirty_cells := dirty_row_count > 0;
   LOCAL had_graphic_scroll := graphic_scroll_lines_pending > 0;
 
+  // Always hide the cursor overlay before modifying G1.
+  hide_cursor();
+
   IF full_redraw_needed THEN
     render_full_terminal();
     clear_dirty_tracking();
 
     full_redraw_needed := 0;
     graphic_scroll_lines_pending := 0;
-    cursor_dirty := 0;
-    indicator_dirty := 0;
+    indicator_dirty := 1;
   ELSE
-    // If a graphic scroll is pending, apply it first
+    // Apply the pending graphic scroll first.
     IF had_graphic_scroll THEN
       perform_graphic_scroll_up(graphic_scroll_lines_pending);
       graphic_scroll_lines_pending := 0;
-    ELSE
-      // No scroll: only erase the old cursor if it moved
-      IF cursor_dirty THEN
-        IF cursor_prev_x <> cursor_x OR cursor_prev_y <> cursor_y THEN
-          draw_cell_to_grob(cursor_prev_x, cursor_prev_y);
-        END;
-      END;
+      indicator_dirty := 1;
     END;
 
-    // Redraw locally changed cells
+    // Redraw locally changed rows.
     IF had_dirty_cells THEN
       redraw_dirty_cells();
     END;
-
-    // Cursor must be drawn after cell redraw and after graphic scroll
-    IF cursor_dirty OR had_dirty_cells OR had_graphic_scroll THEN
-      draw_cursor_at(cursor_x, cursor_y);
-      cursor_prev_x := cursor_x;
-      cursor_prev_y := cursor_y;
-      cursor_dirty := 0;
-    END;
-
-    // Indicator is an overlay, so draw it last
-    IF indicator_dirty OR had_graphic_scroll THEN
-      draw_indicator();
-      indicator_dirty := 0;
-    END;
   END;
+
+  // The indicator is an overlay and may cover part of the first row,
+  // so it must be drawn before restoring the cursor.
+  IF indicator_dirty THEN
+    draw_indicator();
+    indicator_dirty := 0;
+  END;
+
+  // Restore the cursor after all redraw operations are finished.
+  show_cursor();
 
   BLIT_P(G0, G1);
 
@@ -1269,11 +1253,7 @@ run_terminal()
 BEGIN
   LOCAL bytes, new_bytes, outgoing_bytes;
   LOCAL num_bytes, i, k;
-  LOCAL flow_paused := 0;
-
-  // Flow control ASCII codes
-  LOCAL XON_CHAR  := 17; // Resume transmission
-  LOCAL XOFF_CHAR := 19; // Pause transmission
+  LOCAL now_ticks;
 
   init_terminal();
   terminal_exit_requested := 0;
@@ -1286,36 +1266,41 @@ BEGIN
       Pico.SendUart(outgoing_bytes);
     END;
 
-    // Start with deferred bytes from previous iteration
-    bytes := rx_carry;
-    rx_carry := {};
+    bytes := {};
 
-    // Read fresh UART bytes and append them
-    new_bytes := Pico.ReceiveUartBytes();
-    IF SIZE(new_bytes) > 0 THEN
-      bytes := CONCAT(bytes, new_bytes);
+    // Najpierw opróżnij odłożony ogon poprzedniego pakietu.
+    // Dopóki coś zalega w rx_carry, nie pobieraj nic nowego z UART.
+    IF SIZE(rx_carry) > 0 THEN
+      bytes := rx_carry;
+      rx_carry := {};
+    ELSE
+      // Poll UART only when the next poll time has been reached
+      now_ticks := TICKS;
+      IF now_ticks >= next_uart_poll_tick THEN
+        // Short timeout so the terminal loop stays responsive
+        new_bytes := Pico.ReceiveUartBytesTimed(10);
+
+        IF SIZE(new_bytes) > 0 THEN
+          bytes := new_bytes;
+          next_uart_poll_tick := now_ticks + uart_poll_active_ms;
+        ELSE
+          next_uart_poll_tick := now_ticks + uart_poll_idle_ms;
+        END;
+      END;
     END;
 
     num_bytes := SIZE(bytes);
-    flow_paused := 0;
 
     IF num_bytes > 0 THEN
-
-      // Stop sender while building one visible frame
-      Pico.SendUart({XOFF_CHAR});
-      flow_paused := 1;
-
       // Process only until the first render barrier
       FOR i FROM 1 TO num_bytes DO
         process_input_byte(bytes(i));
 
         IF render_barrier_requested THEN
-
           // Keep the unprocessed tail for the next outer-loop iteration
           IF i < num_bytes THEN
             rx_carry := MAKELIST(bytes(k), k, i + 1, num_bytes);
           END;
-
           BREAK;
         END;
       END;
@@ -1325,11 +1310,6 @@ BEGIN
     IF screen_dirty THEN
       present_terminal();
       render_barrier_requested := 0;
-    END;
-
-    // Resume sender only after the frame was actually shown
-    IF flow_paused THEN
-      Pico.SendUart({XON_CHAR});
     END;
 
   END;
@@ -1344,12 +1324,12 @@ BEGIN
   LOCAL ok;
 
   ok := INPUT(
-    {term_width, term_height, font_size, baud_rate},
+    {term_width, term_height, font_size, baud_rate, tab_stop_width},
     "Terminal Settings",
-    {"Width (cols):", "Height (rows):", "Font Size:", "Baud Rate:"},
-    {"Range 1-132", "Range 1-48", "1=Small, 2=Medium, 3=Large", "Range 300-115200"},
-    {26, 15, 2, 9600},
-    {term_width, term_height, font_size, baud_rate}
+    {"Width (cols):", "Height (rows):", "Font Size:", "Baud Rate:", "Tab stop width:"},
+    {"Range 1-132", "Range 1-48", "1=Small, 2=Medium, 3=Large", "Range 300-115200", "Range 1-10"},
+    {26, 15, 2, 9600, 4},
+    {term_width, term_height, font_size, baud_rate, tab_stop_width}
   );
 
   IF ok THEN
@@ -1361,6 +1341,8 @@ BEGIN
     IF font_size > 3 THEN font_size := 3; END;
     IF baud_rate < 300 THEN baud_rate := 300; END;
     IF baud_rate > 115200 THEN baud_rate := 115200; END;
+    IF tab_stop_width > 10 THEN tab_stop_width := 10; END;
+	IF tab_stop_width < 1 THEN tab_stop_width := 1; END;
   END;
 END;
 
@@ -1403,3 +1385,62 @@ BEGIN
 
   RETURN;
 END;
+
+// ============================================================================
+// INITIALIZATION
+// ============================================================================
+
+init_terminal()
+BEGIN
+  // Initialize serial port
+  Pico.Open();
+  Pico.SetUartBaudRate(baud_rate);
+
+  // Initialize the graphics buffer once and reuse it throughout the session
+  IF NOT(grob_initialized) THEN
+    DIMGROB_P(G1, 320, 240, 0);
+    grob_initialized := 1;
+  END;
+
+  RECT_P(0);
+  init_color_table();
+
+  current_fg := 0;
+  current_bg := 15;
+  current_bold := 0;
+
+  clear_entire_buffer();
+
+  // Init row-based dirty tracking
+  dirty_rows := MAKELIST(0, I, 1, term_height);
+  dirty_row_count := 0;
+
+  cursor_x := 0;
+  cursor_y := 0;
+  cursor_prev_x := 0;
+  cursor_prev_y := 0;
+  cursor_visible := 0;
+
+  alpha_mode := 0;
+  pending_shift := 0;
+  shift_lock := 0;
+  view_offset_x := 0;
+  view_offset_y := 0;
+
+  graphic_scroll_lines_pending := 0;
+  render_barrier_requested := 0;
+  next_uart_poll_tick := 0;
+  
+  rx_carry := {};
+  escape_len := 0;
+  escape_in_progress := 0;
+  escape_mode := 0;
+
+  calculate_screen_dimensions();
+
+  screen_dirty := 1;
+  full_redraw_needed := 1;
+  cursor_dirty := 1;
+  indicator_dirty := 1;
+END;
+

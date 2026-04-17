@@ -1,3 +1,7 @@
+// HP Prime PPL Communication Library for Terminal Application
+
+#pragma mode( separator(.,;) integer(h32) )
+
 EXPORT Open()
 BEGIN
   LOCAL sts:={};
@@ -137,19 +141,21 @@ BEGIN
 END;
 
 
-EXPORT ReceiveUartBytes()
+EXPORT ReceiveUartBytesTimed(timeout_ms)
 BEGIN
-  LOCAL recv:=Send("R");
+  LOCAL resp:=SendTimed("R", timeout_ms);
+  LOCAL recv;
   LOCAL msg:={};
   LOCAL c:=1;
 
-  IF TYPE(recv)==6 THEN
-    recv:=recv[2];
+  IF TYPE(resp)==6 AND SIZE(resp)>=2 AND resp[1]==0 THEN
+    recv:=resp[2];
 
-    // Copy the string to first null
-    WHILE (recv[c]<>0) DO
-      msg(0):=recv[c];
-      c:=c+1;
+    IF TYPE(recv)==6 THEN
+      WHILE (c<=SIZE(recv)) AND (recv[c]<>0) DO
+        msg(0):=recv[c];
+        c:=c+1;
+      END;
     END;
   END;
 
@@ -157,7 +163,14 @@ BEGIN
 END;
 
 
-EXPORT Send(cmd)
+EXPORT ReceiveUartBytes()
+BEGIN
+  // Default timeout for generic callers.
+  RETURN ReceiveUartBytesTimed(10);
+END;
+
+
+EXPORT SendTimed(cmd, timeout_ms)
 BEGIN
   LOCAL msg;
 
@@ -177,9 +190,9 @@ BEGIN
 
   USBSend(cmd);
 
-  msg:=WaitForMessage();
+  msg:=WaitForMessage(timeout_ms);
 
-  IF TYPE(msg)==6 THEN
+  IF TYPE(msg)==6 AND SIZE(msg)>0 THEN
     RETURN({0,msg});
   ELSE
     RETURN(0);
@@ -187,15 +200,29 @@ BEGIN
 END;
 
 
-EXPORT WaitForMessage()
+EXPORT Send(cmd)
 BEGIN
-  LOCAL sts:={};
-  LOCAL c:=0;
-
-  WHILE (c<1000) AND EQ(sts, {}) DO
-    sts:=USBRecv(); 
-    c:=c+1;
-  END;
-  RETURN (sts);
+  // Default timeout for control/configuration commands.
+  RETURN SendTimed(cmd, 50);
 END;
 
+
+EXPORT WaitForMessage(timeout_ms)
+BEGIN
+  LOCAL sts:={};
+  LOCAL start_ticks:=TICKS;
+
+  IF timeout_ms<0 THEN
+    timeout_ms:=0;
+  END;
+
+  REPEAT
+    sts:=USBRecv();
+
+    IF TYPE(sts)==6 AND SIZE(sts)>0 THEN
+      RETURN(sts);
+    END;
+  UNTIL (TICKS-start_ticks)>=timeout_ms;
+
+  RETURN({});
+END;

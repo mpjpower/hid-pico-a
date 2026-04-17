@@ -10,7 +10,7 @@
 #include "led.h"
 
 // UART configuration
-#define BAUD_RATE 115200
+#define BAUD_RATE 9600
 #define UART_START_DELAY_MS 250
 
 int main() {
@@ -23,11 +23,6 @@ int main() {
 
     // Initialize LED backend (CYW43 on Pico W, GPIO fallback otherwise).
     led_backend = led_init_auto(25);
-    if (led_backend == LED_BACKEND_CYW43) {
-        uart_interface_write_string("CYW43 init success\n");
-    } else {
-        uart_interface_write_string("CYW43 init failed, using GPIO fallback\n");
-    }
 
     // Initialise I2C bus and register devices
     i2c_bus_init();
