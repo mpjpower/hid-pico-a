@@ -14,8 +14,8 @@ A Raspberry Pi Pico application that acts as a USB-HID device, responding to ASC
 
 - `V`: Get version number
 - `U <baudrate>`: Set UART baudrate (e.g., `U 9600`)
-- `S <text>`: Send text over UART
-- `R`: Read the next queued UART bytes and return one HID-sized chunk
+- `S <text>`: Send raw text bytes over UART. This command does not return a status-prefixed response.
+- `R`: Read currently queued UART bytes and return them as a raw HID payload
 - `L`: Turn on the LED
 - `O`: Turn off the LED
 - `I <device> {reg,val,reg,val,...}`: Set one or more I2C registers (decimal values 0-255)
@@ -26,16 +26,23 @@ A Raspberry Pi Pico application that acts as a USB-HID device, responding to ASC
 
 ## Response Format
 
-Command responses begin with a status prefix, except those which send and receive from the UART:
+Most command responses begin with a status prefix:
 
-- `0 ` (ASCII 48 then 32): success
-- `1 ` (ASCII 49 then 32): error
+- `0 ` (ASCII 48 followed by 32): success
+- `1 ` (ASCII 49 followed by 32): error
+
+This format is used by commands such as `V`, `U`, `L`, `O`, `I`, and `J`.
 
 Examples:
 
-- `0 Version: 1.0.22`
+- `0 Version: 1.0.23`
 - `0 {45,0,12,0}`
 - `1 No I2C ACK from tsl2591`
+
+UART data commands use a different convention:
+
+- `S <text>` sends UART data and may return an empty HID response
+- `R` returns raw queued UART bytes without a status prefix
 
 > Note: On Pico W the onboard LED is driven via the CYW43 WiFi chip, so the `L`/`O` commands use the CYW43 driver to toggle it.
 
@@ -107,42 +114,67 @@ To communicate with the device, you need a host program that can send and receiv
 ```python
 import hid
 
+VID = 0xCAFE
+PID = 0x4001
+REPORT_SIZE = 64
+
 device = hid.device()
-device.open(0xCafe, 0x4001)  # Vendor ID and Product ID
+device.open(VID, PID)
 
-def send_cmd(cmd: str):
-	# HID OUT report must be 64 bytes; command is null-terminated then padded.
-	raw = cmd.encode("ascii") + b"\x00"
-	if len(raw) > 64:
-		raise ValueError("Command too long for 64-byte HID report")
-	device.write(raw + b"\x00" * (64 - len(raw)))
 
-	resp = bytes(device.read(64)).decode("ascii", errors="replace").rstrip("\x00").strip()
-	if len(resp) < 2 or resp[1] != " ":
-		raise RuntimeError(f"Malformed response: {resp!r}")
+def write_cmd(data: bytes):
+    raw = data + b"\x00"
+    if len(raw) > REPORT_SIZE:
+        raise ValueError("Command too long for 64-byte HID report")
+    device.write(raw + b"\x00" * (REPORT_SIZE - len(raw)))
 
-	status = resp[0]    # '0' success, '1' error
-	payload = resp[2:]  # message/data after status prefix
-	return status, payload
 
-# Example: version query
-status, payload = send_cmd("V")
-print(f"status={status} payload={payload}")
+def read_resp(timeout_ms: int = 200) -> bytes:
+    data = bytes(device.read(REPORT_SIZE, timeout_ms))
+    nul = data.find(b"\x00")
+    return data[:nul] if nul >= 0 else data
 
-# Example: I2C read
-status, payload = send_cmd("J tsl2591 {20,21,22,23}")
-if status == "0":
-	values = [int(x) for x in payload.strip("{}").split(",") if x]
-	print("I2C values:", values)
-else:
-	print("I2C error:", payload)
-```
 
-Note: HID reports are 64 bytes. Commands should be null-terminated and padded.
+def send_status_cmd(cmd: str):
+    write_cmd(cmd.encode("ascii"))
+    resp = read_resp().decode("ascii", errors="replace")
+
+    if len(resp) < 2 or resp[1] != " " or resp[0] not in ("0", "1"):
+        raise RuntimeError(f"Malformed status response: {resp!r}")
+
+    return resp[0], resp[2:]
+
+
+def uart_send(text: str):
+    write_cmd(f"S {text}".encode("utf-8"))
+
+
+def uart_read() -> bytes:
+    write_cmd(b"R")
+    return read_resp()
+
+
+# ---- examples ----
+
+status, payload = send_status_cmd("V")
+print("Version:", status, payload)
+
+status, payload = send_status_cmd("J tsl2591 {20,21,22,23}")
+print("I2C:", status, payload)
+
+uart_send("hello from Python\r\n")
+print("UART bytes:", uart_read())
+
+device.close()
+
+Note: The example above uses separate helpers for status commands (`V`, `U`, `L`, `O`, `I`, `J`) and UART passthrough (`S`, `R`), because `S` and `R` do not use the standard `0 ` / `1 ` status-prefixed response format. HID reports are 64 bytes, and commands are sent as null-terminated, zero-padded payloads.
 
 ## UART Buffering
 
-- Incoming UART bytes are now captured continuously into a Pico-side ring buffer.
-- The `R` command returns queued UART data in batches of up to 63 bytes per HID response.
-- This reduces dropped UART data when the remote system sends bursts faster than the host polls HID.
-- Sustained traffic can still overflow the Pico-side queue if the host drains it too slowly. If the remote computer supports it, flow control such as RTS/CTS or XON/XOFF is still useful for long bursts, but would need adjustments to the code on the Pico.
+- Incoming UART bytes are captured continuously into a Pico-side ring buffer.
+- The RX buffer size is 2048 bytes.
+- The `R` command returns currently queued UART data as raw bytes.
+- Software flow control is applied automatically on the UART side:
+  - XOFF (`0x13`) is sent when the RX buffer reaches the high watermark
+  - XON (`0x11`) is sent after the buffer drains back to the low watermark
+- This reduces the risk of RX buffer overflow during burst traffic, but overflow is still possible if the sender does not respect flow control or the host drains data too slowly.
