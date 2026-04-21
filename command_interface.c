@@ -8,7 +8,7 @@
 #include "uart_interface.h"
 #include "led.h"
 
-#define VERSION "1.0.22"
+#define VERSION "1.0.23"
 
 static void skip_spaces(char **p) {
     while (**p == ' ') {

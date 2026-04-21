@@ -12,7 +12,7 @@ to a remote UART device through the Pico serial API (`pico.ppx`).
 
 1. Copy `pico.ppx` and `terminal.ppx` to the Prime, edit them and run Check on each to make sure they compile without syntax errors.
 2. Run `ANSI_Terminal()`.
-3. Choose **Settings** to configure width, height, font size, and baud rate.
+3. Choose **Settings** to configure width, height, font size, baud rate, and tab stop width.
 4. Choose **Start Terminal** to begin the terminal loop.
 
 ## Current defaults
@@ -20,10 +20,10 @@ to a remote UART device through the Pico serial API (`pico.ppx`).
 | Setting             | Value   |
 |---------------------|---------|
 | Width               | 26 cols |
-| Height              | 15 rows |
+| Height              | 17 rows |
 | Font size           | 2       |
 | Baud rate           | 9600    |
-| Tab stop width      | 8 cols  |
+| Tab stop width      | 4 cols  |
 
 ## Main flow
 
@@ -35,26 +35,30 @@ Pico.SetUartBaudRate(baud_rate)
 ```
 
 Then enters a loop that:
-1. Drains pending HP Prime key presses and sends the resulting byte stream with Pico.SendUart().
-2. Collects deferred RX bytes from the previous iteration (rx_carry) and appends fresh bytes from Pico.ReceiveUartBytes().
-3. Sends XOFF (19) before processing a visible RX chunk.
-4. Feeds incoming bytes through the terminal parser until a render barrier is reached.
-5. Keeps any unprocessed RX tail for the next iteration.
-6. Renders at most one frame per loop iteration.
-7. Sends XON (17) after the frame is presented.
+1. Drains pending HP Prime key presses and sends the resulting byte stream with `Pico.SendUart()`.
+2. If deferred RX bytes are pending in `rx_carry`, processes them first and does not read fresh UART data in that iteration.
+3. Otherwise polls UART only when `TICKS` reaches `next_uart_poll_tick`.
+4. Reads fresh UART bytes with `Pico.ReceiveUartBytesTimed(10)`.
+5. Schedules the next UART poll after 20 ms when data was received, or after 50 ms when the poll was idle.
+6. Feeds incoming bytes through the terminal parser until a render barrier is reached.
+7. Keeps any unprocessed RX tail for the next iteration.
+8. Renders at most one frame per loop iteration.
 
-## Performance / flow control
+## Performance
 
-Incoming UART data may be processed in chunks rather than all at once. When a render barrier is reached, remaining bytes are deferred to the next loop iteration (rx_carry) so the UI remains responsive.
+Incoming UART data is processed in bounded chunks so rendering and keyboard handling remain responsive.
+
+If a screen update boundary is reached while processing received data, the remaining bytes are handled in the next loop iteration. UART polling is time-based, with shorter intervals during active traffic and longer intervals while idle.
 
 ## Settings UI
 
-One `INPUT` dialog with four fields:
+One `INPUT` dialog with five fields:
 
 - Width (cols) — range 1..132
 - Height (rows) — range 1..48
 - Font size — 1 (small), 2 (medium), 3 (large)
 - Baud rate — range 300..115200
+- Tab stop width — range 1..10
 
 ## Terminal behaviour
 
@@ -66,7 +70,9 @@ One `INPUT` dialog with four fields:
 - Off-screen rendering into `G1`, blitted to `G0` with `BLIT_P`.
 - Dirty-row tracking is used to redraw only rows that changed.
 - Scroll operations may be rendered using a graphic scroll of the existing framebuffer, followed by redraw of the newly exposed rows.
-- Cursor drawn as a white rectangle outline.
+- Cursor is rendered by inverting the current cell.
+- The cursor is hidden before redraw and scroll operations, then restored afterwards.
+- The cursor is not shown when it would overlap the top-right indicator overlay.
 
 ## Supported ANSI sequences
 
@@ -97,7 +103,7 @@ Application cursor-key sequences ESC O A/B/C/D are also accepted and mapped to c
 | NEL (133)  | Next line: move to column 0 of the next line           |
 | ESC E      | 7-bit representation of NEL                            |
 | BS (8)     | Backspace (move cursor left)                           |
-| TAB (9)    | Move cursor to next tab stop (default every 8 columns) |
+| TAB (9)    | Move cursor to next tab stop (default every 4 columns) |
 
 ### Compatibility behavior
 
