@@ -185,7 +185,6 @@ def uart_read() -> bytes:
     write_cmd(b"R")
     return read_resp()
 
-
 # ---- examples ----
 
 status, payload = send_status_cmd("V")
@@ -198,6 +197,7 @@ uart_send("hello from Python\r\n")
 print("UART bytes:", uart_read())
 
 device.close()
+```
 
 Note: The example above uses separate helpers for status commands (`V`, `U`, `L`, `O`, `I`, `J`) and UART passthrough (`S`, `R`), because `S` and `R` do not use the standard `0 ` / `1 ` status-prefixed response format. HID reports are 64 bytes, and commands are sent as null-terminated, zero-padded payloads.
 
