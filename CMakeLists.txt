@@ -17,9 +17,17 @@ cmake_minimum_required(VERSION 3.13)
 # Pull in SDK (must be before project)
 include(pico_sdk_import.cmake)
 
+# List of supported boards
+set(SUPPORTED_BOARDS pico pico_w pico2 pico2_w)
+
 # Default to Pico W unless overridden
 if(NOT DEFINED PICO_BOARD)
-    set(PICO_BOARD pico_w CACHE STRING "Target board")
+    set(PICO_BOARD pico_w CACHE STRING "Target board: pico_w, pico2, or pico2_w")
+endif()
+
+# Validate board choice
+if(NOT PICO_BOARD IN_LIST SUPPORTED_BOARDS)
+    message(FATAL_ERROR "PICO_BOARD=${PICO_BOARD} not supported. Choose from: ${SUPPORTED_BOARDS}")
 endif()
 
 project(hid-pico-a C CXX ASM)
@@ -29,7 +37,18 @@ set(CMAKE_CXX_STANDARD 17)
 # Initialize the SDK
 pico_sdk_init()
 
-add_executable(${PROJECT_NAME}
+# Define which boards have wireless support
+set(WIRELESS_BOARDS pico_w pico2_w)
+
+if(PICO_BOARD IN_LIST WIRELESS_BOARDS)
+    set(HAS_WIRELESS TRUE)
+else()
+    set(HAS_WIRELESS FALSE)
+endif()
+
+# Create executable with board-specific suffix
+set(TARGET_NAME "${PROJECT_NAME}-${PICO_BOARD}")
+add_executable(${TARGET_NAME}
     main.c
     led.c
     hid_transport.c
@@ -40,15 +59,31 @@ add_executable(${PROJECT_NAME}
     lux.c
 )
 
-# Example include
-target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+# Include directories
+target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
-# Pull in our pico_stdlib which pulls in commonly used features
-target_link_libraries(${PROJECT_NAME} pico_stdlib tinyusb_device tinyusb_board pico_unique_id pico_cyw43_arch_none hardware_i2c)
+# Conditionally link wireless libraries and set preprocessor definition
+if(HAS_WIRELESS)
+    set(WIRELESS_LIBS pico_cyw43_arch_none)
+    target_compile_definitions(${TARGET_NAME} PRIVATE PICO_BOARD_HAS_WIRELESS=1)
+else()
+    set(WIRELESS_LIBS "")
+    target_compile_definitions(${TARGET_NAME} PRIVATE PICO_BOARD_HAS_WIRELESS=0)
+endif()
+
+# Link libraries
+target_link_libraries(${TARGET_NAME} 
+    pico_stdlib 
+    tinyusb_device 
+    tinyusb_board 
+    pico_unique_id 
+    ${WIRELESS_LIBS}
+    hardware_i2c
+)
 
 # Enable USB output, disable UART output
-# pico_enable_stdio_usb(${PROJECT_NAME} 1)
-# pico_enable_stdio_uart(${PROJECT_NAME} 0)
+# pico_enable_stdio_usb(${TARGET_NAME} 1)
+# pico_enable_stdio_uart(${TARGET_NAME} 0)
 
 # Create map/bin/hex file etc.
-pico_add_extra_outputs(${PROJECT_NAME})
+pico_add_extra_outputs(${TARGET_NAME})

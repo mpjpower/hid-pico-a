@@ -1,2 +1,5 @@
 build
+build-pico_w
+build-pico2
+build-pico2_w
 !.vscode/*

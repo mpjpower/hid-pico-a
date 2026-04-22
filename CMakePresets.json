@@ -1,0 +1,32 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "default",
+      "displayName": "Pico W (default)",
+      "description": "Build for Pico W with wireless support",
+      "binaryDir": "${sourceDir}/build-pico_w",
+      "cacheVariables": {
+        "PICO_BOARD": "pico_w"
+      }
+    },
+    {
+      "name": "pico2",
+      "displayName": "Pico 2",
+      "description": "Build for Pico 2 (no wireless)",
+      "binaryDir": "${sourceDir}/build-pico2",
+      "cacheVariables": {
+        "PICO_BOARD": "pico2"
+      }
+    },
+    {
+      "name": "pico2_w",
+      "displayName": "Pico 2 W",
+      "description": "Build for Pico 2 W with wireless support",
+      "binaryDir": "${sourceDir}/build-pico2_w",
+      "cacheVariables": {
+        "PICO_BOARD": "pico2_w"
+      }
+    }
+  ]
+}

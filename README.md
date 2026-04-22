@@ -35,7 +35,7 @@ This format is used by commands such as `V`, `U`, `L`, `O`, `I`, and `J`.
 
 Examples:
 
-- `0 Version: 1.0.23`
+- `0 Version: 1.0.24`
 - `0 {45,0,12,0}`
 - `1 No I2C ACK from tsl2591`
 
@@ -44,14 +44,46 @@ UART data commands use a different convention:
 - `S <text>` sends UART data and may return an empty HID response
 - `R` returns raw queued UART bytes without a status prefix
 
-> Note: On Pico W the onboard LED is driven via the CYW43 WiFi chip, so the `L`/`O` commands use the CYW43 driver to toggle it.
-
 ## Building
 
-1. Install the Raspberry Pi Pico SDK and set `PICO_SDK_PATH` environment variable.
-2. Create a build directory: `mkdir build && cd build`
-3. Configure with CMake: `cmake ..` (for Pico) or `cmake .. -DPICO_BOARD=pico_w` (for Pico W)
-4. Build: `make`
+This project uses CMake presets to build for multiple target boards. Each board produces its own build directory and UF2 file.
+
+### Prerequisites
+
+- Raspberry Pi Pico SDK (installed via the VS Code Pico extension, or set `PICO_SDK_PATH` manually)
+- CMake 3.13 or later
+- ARM GCC toolchain
+
+### Supported Boards
+
+| Board | Preset | Build directory | Output file |
+|-------|--------|-----------------|-------------|
+| Pico W | `default` | `build-pico_w/` | `hid-pico-a-pico_w.uf2` |
+| Pico 2 | `pico2` | `build-pico2/` | `hid-pico-a-pico2.uf2` |
+| Pico 2 W | `pico2_w` | `build-pico2_w/` | `hid-pico-a-pico2_w.uf2` |
+
+### Build Commands
+
+**Pico W:**
+```bash
+cmake --preset default && cmake --build build-pico_w
+```
+
+**Pico 2:**
+```bash
+cmake --preset pico2 && cmake --build build-pico2
+```
+
+**Pico 2 W:**
+```bash
+cmake --preset pico2_w && cmake --build build-pico2_w
+```
+
+### Notes
+
+- Wireless boards (Pico W, Pico 2 W) link the CYW43 driver and drive the onboard LED via the WiFi chip.
+- Non-wireless boards (Pico 2) use GPIO for the LED; the CYW43 driver is not linked.
+- VS Code users can select a preset via the CMake extension's kit/preset picker.
 
 ## Flashing
 
