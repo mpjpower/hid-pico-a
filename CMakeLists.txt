@@ -49,18 +49,21 @@ endif()
 # Create executable with board-specific suffix
 set(TARGET_NAME "${PROJECT_NAME}-${PICO_BOARD}")
 add_executable(${TARGET_NAME}
-    main.c
-    led.c
-    hid_transport.c
-    usb_descriptors.c
-    command_interface.c
-    uart_interface.c
-    i2c_interface.c
-    lux.c
+    src/main.c
+    src/led.c
+    src/hid_transport.c
+    src/usb_descriptors.c
+    src/command_interface.c
+    src/uart_interface.c
+    src/i2c_interface.c
+    src/lux.c
 )
 
 # Include directories
-target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(${TARGET_NAME}
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
 
 # Conditionally link wireless libraries and set preprocessor definition
 if(HAS_WIRELESS)
