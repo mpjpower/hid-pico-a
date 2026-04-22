@@ -2,4 +2,10 @@ build
 build-pico_w
 build-pico2
 build-pico2_w
-!.vscode/*
+
+# Keep shared VS Code project config, ignore local machine-specific settings.
+.vscode/*
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/settings.json
