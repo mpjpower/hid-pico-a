@@ -1360,6 +1360,249 @@ BEGIN
 END;
 
 // ============================================================================
+// KEYBOARD HELP
+// ============================================================================
+
+LOCAL key_legend(char_code)
+BEGIN
+  IF char_code == 8 THEN RETURN "BS"; END;
+  IF char_code == 9 THEN RETURN "TAB"; END;
+  IF char_code == 10 THEN RETURN "LF"; END;
+  IF char_code == 13 THEN RETURN "CR"; END;
+  IF char_code == 27 THEN RETURN "ESC"; END;
+  IF char_code == 32 THEN RETURN "SP"; END;
+  IF char_code == 127 THEN RETURN "DEL"; END;
+
+  IF char_code >= 32 AND char_code <= 126 THEN
+    RETURN CHAR(char_code);
+  END;
+
+  IF char_code >= 1 AND char_code <= 26 THEN
+    RETURN "^" + CHAR(char_code + 64);
+  END;
+
+  RETURN "";
+END;
+
+LOCAL keyboard_helper(key_map, title)
+BEGIN
+  LOCAL row, col, key_idx, char_code;
+  LOCAL x, y;
+  LOCAL char_str;
+  LOCAL title_font_size := 3;
+  LOCAL key_font_size := 2;
+  // Rows 0-2: 6 keys, step=50, width=47 → right edge at x=307
+  LOCAL key_w6 := 47;
+  LOCAL step6 := 50;
+  // Row 2 double key: 2 slots wide minus gap → right edge at x=307
+  LOCAL double_key_width := 97;
+  // Rows 3-6: 5 keys, step=60, width=57 → right edge at x=307
+  LOCAL key_w5 := 57;
+  LOCAL step5 := 60;
+  LOCAL key_height := 18;
+  LOCAL key_char_width_px := 6;
+  LOCAL key_text_y_offset := 3;
+  LOCAL colour := #000000h;
+  LOCAL screen_bg_colour := #C0C0C0h;
+  LOCAL key_bg_colour := #FFFFFFh;
+  LOCAL alpha_key_colour := #D07000h;
+  LOCAL shift_key_colour := #0060C0h;
+  LOCAL key_label_colour := #FFFFFFh;
+
+  // Clear screen
+  RECT_P(G1, 0, 0, 319, 239, screen_bg_colour);
+  
+  // Display title at top
+  TEXTOUT_P(title, G1, 10, 5, title_font_size, colour);
+  
+  y := 40;
+  
+  // Row 0: Keys at indices 14-19 (6 keys, step6)
+  x := 10;
+  FOR col FROM 14 TO 19 DO
+    char_code := key_map(col + 1);
+    IF char_code > 0 THEN
+      char_str := key_legend(char_code);
+      RECT_P(G1, x, y, x + key_w6, y + key_height, key_bg_colour);
+      TEXTOUT_P(char_str, G1, x + ((key_w6 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+    END;
+    x := x + step6;
+  END;
+  
+  y := y + 25;
+  
+  // Row 1: Keys at indices 20-25 (6 keys, step6)
+  x := 10;
+  FOR col FROM 20 TO 25 DO
+    char_code := key_map(col + 1);
+    IF char_code > 0 THEN
+      char_str := key_legend(char_code);
+      RECT_P(G1, x, y, x + key_w6, y + key_height, key_bg_colour);
+      TEXTOUT_P(char_str, G1, x + ((key_w6 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+    END;
+    x := x + step6;
+  END;
+  
+  y := y + 25;
+  
+  // Row 2: Keys at indices 26-29 (4 keys, step6) + index 30 (double width)
+  x := 10;
+  FOR col FROM 26 TO 29 DO
+    char_code := key_map(col + 1);
+    IF char_code > 0 THEN
+      char_str := key_legend(char_code);
+      RECT_P(G1, x, y, x + key_w6, y + key_height, key_bg_colour);
+      TEXTOUT_P(char_str, G1, x + ((key_w6 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+    END;
+    x := x + step6;
+  END;
+  
+  // Double width key at index 30 (starts at x=210, ends at x=307)
+  char_code := key_map(31);
+  IF char_code > 0 THEN
+    char_str := key_legend(char_code);
+    RECT_P(G1, x, y, x + double_key_width, y + key_height, key_bg_colour);
+    TEXTOUT_P(char_str, G1, x + ((double_key_width - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+  END;
+  
+  y := y + 25;
+  
+  // Row 3: 5 keys at indices 31-35 (step5); left edge x=10, right edge x=307
+  x := 10;
+  char_code := key_map(32);
+  IF char_code > 0 THEN
+    char_str := key_legend(char_code);
+    RECT_P(G1, x, y, x + key_w5, y + key_height, key_bg_colour);
+    TEXTOUT_P(char_str, G1, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+  END;
+  x := x + step5;
+  FOR col FROM 32 TO 34 DO
+    char_code := key_map(col + 1);
+    IF char_code > 0 THEN
+      char_str := key_legend(char_code);
+      RECT_P(G1, x, y, x + key_w5, y + key_height, key_bg_colour);
+      TEXTOUT_P(char_str, G1, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+    END;
+    x := x + step5;
+  END;
+  char_code := key_map(36);
+  IF char_code > 0 THEN
+    char_str := key_legend(char_code);
+    RECT_P(G1, x, y, x + key_w5, y + key_height, key_bg_colour);
+    TEXTOUT_P(char_str, G1, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+  END;
+  
+  y := y + 25;
+  
+  // Row 4: ALPHA + indices 37-39 + index 40 (5 keys, step5)
+  x := 10;
+  RECT_P(G1, x, y, x + key_w5, y + key_height, alpha_key_colour);
+  TEXTOUT_P("ALPHA", G1, x + ((key_w5 - (SIZE("ALPHA") * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, key_label_colour);
+  x := x + step5;
+  FOR col FROM 37 TO 39 DO
+    char_code := key_map(col + 1);
+    IF char_code > 0 THEN
+      char_str := key_legend(char_code);
+      RECT_P(G1, x, y, x + key_w5, y + key_height, key_bg_colour);
+      TEXTOUT_P(char_str, G1, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+    END;
+    x := x + step5;
+  END;
+  char_code := key_map(41);
+  IF char_code > 0 THEN
+    char_str := key_legend(char_code);
+    RECT_P(G1, x, y, x + key_w5, y + key_height, key_bg_colour);
+    TEXTOUT_P(char_str, G1, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+  END;
+  
+  y := y + 25;
+  
+  // Row 5: SHIFT + indices 42-44 + index 45 (5 keys, step5)
+  x := 10;
+  RECT_P(G1, x, y, x + key_w5, y + key_height, shift_key_colour);
+  TEXTOUT_P("SHIFT", G1, x + ((key_w5 - (SIZE("SHIFT") * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, key_label_colour);
+  x := x + step5;
+  FOR col FROM 42 TO 44 DO
+    char_code := key_map(col + 1);
+    IF char_code > 0 THEN
+      char_str := key_legend(char_code);
+      RECT_P(G1, x, y, x + key_w5, y + key_height, key_bg_colour);
+      TEXTOUT_P(char_str, G1, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+    END;
+    x := x + step5;
+  END;
+  char_code := key_map(46);
+  IF char_code > 0 THEN
+    char_str := key_legend(char_code);
+    RECT_P(G1, x, y, x + key_w5, y + key_height, key_bg_colour);
+    TEXTOUT_P(char_str, G1, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+  END;
+  
+  y := y + 25;
+  
+  // Row 6: index 46 + indices 47-49 + index 50 (5 keys, step5)
+  x := 10;
+  char_code := key_map(47);
+  IF char_code > 0 THEN
+    char_str := key_legend(char_code);
+    RECT_P(G1, x, y, x + key_w5, y + key_height, key_bg_colour);
+    TEXTOUT_P(char_str, G1, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+  END;
+  x := x + step5;
+  FOR col FROM 47 TO 49 DO
+    char_code := key_map(col + 1);
+    IF char_code > 0 THEN
+      char_str := key_legend(char_code);
+      RECT_P(G1, x, y, x + key_w5, y + key_height, key_bg_colour);
+      TEXTOUT_P(char_str, G1, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+    END;
+    x := x + step5;
+  END;
+  char_code := key_map(51);
+  IF char_code > 0 THEN
+    char_str := key_legend(char_code);
+    RECT_P(G1, x, y, x + key_w5, y + key_height, key_bg_colour);
+    TEXTOUT_P(char_str, G1, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+  END;
+  
+  BLIT_P(G0, G1);
+END;
+
+EXPORT help()
+BEGIN
+  LOCAL choice := 1;
+  LOCAL modes := {"Alpha", "Alpha Shift", "Numeric", "Numeric Shift", "Done"};
+  
+  WHILE 1 DO
+    CHOOSE(choice, "Keyboard Help", modes);
+    
+    CASE
+      IF choice == 0 OR choice == 5 THEN
+        BREAK;
+      END;
+      IF choice == 1 THEN
+        keyboard_helper(alpha_lower_outputs, "Alpha Mode");
+        WAIT();
+      END;
+      IF choice == 2 THEN
+        keyboard_helper(alpha_upper_outputs, "Alpha Shift Mode");
+        WAIT();
+      END;
+      IF choice == 3 THEN
+        keyboard_helper(numeric_key_outputs, "Numeric Mode");
+        WAIT();
+      END;
+      IF choice == 4 THEN
+        keyboard_helper(numeric_shift_outputs, "Numeric Shift Mode");
+        WAIT();
+      END;
+    END;
+  END;
+  
+  BLIT_P(G0, G1);
+END;
+
+// ============================================================================
 // MAIN EXPORT
 // ============================================================================
 
@@ -1374,13 +1617,13 @@ BEGIN
   TOff:=R→B(2000*1000);
 
   LOCAL choice := 1;
-  LOCAL menu_options := {"Start Terminal", "Settings", "Exit"};
+  LOCAL menu_options := {"Start Terminal", "Settings", "Keyboard Help", "Exit"};
   
   WHILE 1 DO
     CHOOSE(choice, "HP Prime ANSI Terminal", menu_options);
     
     CASE
-      IF choice == 0 OR choice == 3 THEN
+      IF choice == 0 OR choice == 4 THEN
         BREAK;
       END;
       IF choice == 1 THEN
@@ -1388,6 +1631,9 @@ BEGIN
       END;
       IF choice == 2 THEN
         show_settings_menu();
+      END;
+      IF choice == 3 THEN
+        help();
       END;
     END;
   END;
