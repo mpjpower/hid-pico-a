@@ -1268,8 +1268,8 @@ BEGIN
 
     bytes := {};
 
-    // Najpierw opróżnij odłożony ogon poprzedniego pakietu.
-    // Dopóki coś zalega w rx_carry, nie pobieraj nic nowego z UART.
+    // First drain the deferred tail of the previous packet.
+    // While anything remains in rx_carry, do not fetch new bytes from UART.
     IF SIZE(rx_carry) > 0 THEN
       bytes := rx_carry;
       rx_carry := {};
