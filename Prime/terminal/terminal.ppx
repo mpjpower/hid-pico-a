@@ -1315,6 +1315,19 @@ BEGIN
   END;
 END;
 
+LOCAL flush_startup_uart_noise()
+BEGIN
+  LOCAL i, junk;
+
+  // Consume immediate UART chatter emitted during setup (for example baud-set status text).
+  FOR i FROM 1 TO 4 DO
+    junk := Pico.ReceiveUartBytesTimed(10);
+    IF SIZE(junk) == 0 THEN
+      BREAK;
+    END;
+  END;
+END;
+
 // ============================================================================
 // CONFIGURATION MENU
 // ============================================================================
@@ -1395,6 +1408,7 @@ BEGIN
   // Initialize serial port
   Pico.Open();
   Pico.SetUartBaudRate(baud_rate);
+  flush_startup_uart_noise();
 
   // Initialize the graphics buffer once and reuse it throughout the session
   IF NOT(grob_initialized) THEN
