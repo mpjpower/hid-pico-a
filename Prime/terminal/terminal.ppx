@@ -1186,6 +1186,10 @@ BEGIN
 
   WHILE key >= 0 DO
     CASE
+      IF key == 3 THEN  // HP Prime Help key: Show key for current mode
+        show_active_help();
+      END;
+
       IF key == 13 THEN  // HP Prime Menu key: exit terminal
         terminal_exit_requested := 1;
       END;
@@ -1249,7 +1253,7 @@ BEGIN
   RETURN outgoing_bytes;
 END;
 
-run_terminal()
+LOCAL run_terminal()
 BEGIN
   LOCAL bytes, new_bytes, outgoing_bytes;
   LOCAL num_bytes, i, k;
@@ -1410,10 +1414,10 @@ BEGIN
   LOCAL key_label_colour := #FFFFFFh;
 
   // Clear screen
-  RECT_P(G1, 0, 0, 319, 239, screen_bg_colour);
+  RECT_P(G2, 0, 0, 319, 239, screen_bg_colour);
   
   // Display title at top
-  TEXTOUT_P(title, G1, 10, 5, title_font_size, colour);
+  TEXTOUT_P(title, G2, 10, 5, title_font_size, colour);
   
   y := 40;
   
@@ -1423,8 +1427,8 @@ BEGIN
     char_code := key_map(col + 1);
     IF char_code > 0 THEN
       char_str := key_legend(char_code);
-      RECT_P(G1, x, y, x + key_w6, y + key_height, key_bg_colour);
-      TEXTOUT_P(char_str, G1, x + ((key_w6 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+      RECT_P(G2, x, y, x + key_w6, y + key_height, key_bg_colour);
+      TEXTOUT_P(char_str, G2, x + ((key_w6 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
     END;
     x := x + step6;
   END;
@@ -1437,8 +1441,8 @@ BEGIN
     char_code := key_map(col + 1);
     IF char_code > 0 THEN
       char_str := key_legend(char_code);
-      RECT_P(G1, x, y, x + key_w6, y + key_height, key_bg_colour);
-      TEXTOUT_P(char_str, G1, x + ((key_w6 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+      RECT_P(G2, x, y, x + key_w6, y + key_height, key_bg_colour);
+      TEXTOUT_P(char_str, G2, x + ((key_w6 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
     END;
     x := x + step6;
   END;
@@ -1451,8 +1455,8 @@ BEGIN
     char_code := key_map(col + 1);
     IF char_code > 0 THEN
       char_str := key_legend(char_code);
-      RECT_P(G1, x, y, x + key_w6, y + key_height, key_bg_colour);
-      TEXTOUT_P(char_str, G1, x + ((key_w6 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+      RECT_P(G2, x, y, x + key_w6, y + key_height, key_bg_colour);
+      TEXTOUT_P(char_str, G2, x + ((key_w6 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
     END;
     x := x + step6;
   END;
@@ -1461,8 +1465,8 @@ BEGIN
   char_code := key_map(31);
   IF char_code > 0 THEN
     char_str := key_legend(char_code);
-    RECT_P(G1, x, y, x + double_key_width, y + key_height, key_bg_colour);
-    TEXTOUT_P(char_str, G1, x + ((double_key_width - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+    RECT_P(G2, x, y, x + double_key_width, y + key_height, key_bg_colour);
+    TEXTOUT_P(char_str, G2, x + ((double_key_width - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
   END;
   
   y := y + 25;
@@ -1472,70 +1476,70 @@ BEGIN
   char_code := key_map(32);
   IF char_code > 0 THEN
     char_str := key_legend(char_code);
-    RECT_P(G1, x, y, x + key_w5, y + key_height, key_bg_colour);
-    TEXTOUT_P(char_str, G1, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+    RECT_P(G2, x, y, x + key_w5, y + key_height, key_bg_colour);
+    TEXTOUT_P(char_str, G2, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
   END;
   x := x + step5;
   FOR col FROM 32 TO 34 DO
     char_code := key_map(col + 1);
     IF char_code > 0 THEN
       char_str := key_legend(char_code);
-      RECT_P(G1, x, y, x + key_w5, y + key_height, key_bg_colour);
-      TEXTOUT_P(char_str, G1, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+      RECT_P(G2, x, y, x + key_w5, y + key_height, key_bg_colour);
+      TEXTOUT_P(char_str, G2, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
     END;
     x := x + step5;
   END;
   char_code := key_map(36);
   IF char_code > 0 THEN
     char_str := key_legend(char_code);
-    RECT_P(G1, x, y, x + key_w5, y + key_height, key_bg_colour);
-    TEXTOUT_P(char_str, G1, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+    RECT_P(G2, x, y, x + key_w5, y + key_height, key_bg_colour);
+    TEXTOUT_P(char_str, G2, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
   END;
   
   y := y + 25;
   
   // Row 4: ALPHA + indices 37-39 + index 40 (5 keys, step5)
   x := 10;
-  RECT_P(G1, x, y, x + key_w5, y + key_height, alpha_key_colour);
-  TEXTOUT_P("ALPHA", G1, x + ((key_w5 - (SIZE("ALPHA") * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, key_label_colour);
+  RECT_P(G2, x, y, x + key_w5, y + key_height, alpha_key_colour);
+  TEXTOUT_P("ALPHA", G2, x + ((key_w5 - (SIZE("ALPHA") * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, key_label_colour);
   x := x + step5;
   FOR col FROM 37 TO 39 DO
     char_code := key_map(col + 1);
     IF char_code > 0 THEN
       char_str := key_legend(char_code);
-      RECT_P(G1, x, y, x + key_w5, y + key_height, key_bg_colour);
-      TEXTOUT_P(char_str, G1, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+      RECT_P(G2, x, y, x + key_w5, y + key_height, key_bg_colour);
+      TEXTOUT_P(char_str, G2, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
     END;
     x := x + step5;
   END;
   char_code := key_map(41);
   IF char_code > 0 THEN
     char_str := key_legend(char_code);
-    RECT_P(G1, x, y, x + key_w5, y + key_height, key_bg_colour);
-    TEXTOUT_P(char_str, G1, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+    RECT_P(G2, x, y, x + key_w5, y + key_height, key_bg_colour);
+    TEXTOUT_P(char_str, G2, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
   END;
   
   y := y + 25;
   
   // Row 5: SHIFT + indices 42-44 + index 45 (5 keys, step5)
   x := 10;
-  RECT_P(G1, x, y, x + key_w5, y + key_height, shift_key_colour);
-  TEXTOUT_P("SHIFT", G1, x + ((key_w5 - (SIZE("SHIFT") * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, key_label_colour);
+  RECT_P(G2, x, y, x + key_w5, y + key_height, shift_key_colour);
+  TEXTOUT_P("SHIFT", G2, x + ((key_w5 - (SIZE("SHIFT") * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, key_label_colour);
   x := x + step5;
   FOR col FROM 42 TO 44 DO
     char_code := key_map(col + 1);
     IF char_code > 0 THEN
       char_str := key_legend(char_code);
-      RECT_P(G1, x, y, x + key_w5, y + key_height, key_bg_colour);
-      TEXTOUT_P(char_str, G1, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+      RECT_P(G2, x, y, x + key_w5, y + key_height, key_bg_colour);
+      TEXTOUT_P(char_str, G2, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
     END;
     x := x + step5;
   END;
   char_code := key_map(46);
   IF char_code > 0 THEN
     char_str := key_legend(char_code);
-    RECT_P(G1, x, y, x + key_w5, y + key_height, key_bg_colour);
-    TEXTOUT_P(char_str, G1, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+    RECT_P(G2, x, y, x + key_w5, y + key_height, key_bg_colour);
+    TEXTOUT_P(char_str, G2, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
   END;
   
   y := y + 25;
@@ -1545,30 +1549,51 @@ BEGIN
   char_code := key_map(47);
   IF char_code > 0 THEN
     char_str := key_legend(char_code);
-    RECT_P(G1, x, y, x + key_w5, y + key_height, key_bg_colour);
-    TEXTOUT_P(char_str, G1, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+    RECT_P(G2, x, y, x + key_w5, y + key_height, key_bg_colour);
+    TEXTOUT_P(char_str, G2, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
   END;
   x := x + step5;
   FOR col FROM 47 TO 49 DO
     char_code := key_map(col + 1);
     IF char_code > 0 THEN
       char_str := key_legend(char_code);
-      RECT_P(G1, x, y, x + key_w5, y + key_height, key_bg_colour);
-      TEXTOUT_P(char_str, G1, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+      RECT_P(G2, x, y, x + key_w5, y + key_height, key_bg_colour);
+      TEXTOUT_P(char_str, G2, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
     END;
     x := x + step5;
   END;
   char_code := key_map(51);
   IF char_code > 0 THEN
     char_str := key_legend(char_code);
-    RECT_P(G1, x, y, x + key_w5, y + key_height, key_bg_colour);
-    TEXTOUT_P(char_str, G1, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
+    RECT_P(G2, x, y, x + key_w5, y + key_height, key_bg_colour);
+    TEXTOUT_P(char_str, G2, x + ((key_w5 - (SIZE(char_str) * key_char_width_px)) / 2), y + key_text_y_offset, key_font_size, colour);
   END;
   
-  BLIT_P(G0, G1);
+  BLIT_P(G0, G2);
 END;
 
-EXPORT help()
+LOCAL show_active_help()
+BEGIN
+  IF alpha_mode THEN
+    IF pending_shift OR shift_lock THEN
+      keyboard_helper(alpha_upper_outputs, "Alpha Shift Mode");
+    ELSE
+      keyboard_helper(alpha_lower_outputs, "Alpha Mode");
+    END;
+  ELSE
+    IF pending_shift OR shift_lock THEN
+      keyboard_helper(numeric_shift_outputs, "Numeric Shift Mode");
+    ELSE
+      keyboard_helper(numeric_key_outputs, "Numeric Mode");
+    END;
+  END;
+
+  WAIT();
+
+  BLIT_P(G0, G1); // Restore terminal screen
+END;
+
+LOCAL show_keyboard_help_menu()
 BEGIN
   LOCAL choice := 1;
   LOCAL modes := {"Alpha", "Alpha Shift", "Numeric", "Numeric Shift", "Done"};
@@ -1599,7 +1624,7 @@ BEGIN
     END;
   END;
   
-  BLIT_P(G0, G1);
+  BLIT_P(G0, G2);
 END;
 
 // ============================================================================
@@ -1633,7 +1658,7 @@ BEGIN
         show_settings_menu();
       END;
       IF choice == 3 THEN
-        help();
+        show_keyboard_help_menu();
       END;
     END;
   END;
@@ -1659,6 +1684,7 @@ BEGIN
   // Initialize the graphics buffer once and reuse it throughout the session
   IF NOT(grob_initialized) THEN
     DIMGROB_P(G1, 320, 240, 0);
+    DIMGROB_P(G2, 320, 240, 0);
     grob_initialized := 1;
   END;
 
