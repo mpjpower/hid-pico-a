@@ -74,7 +74,7 @@ static inline void uart_rx_pause_sender_if_needed(void) {
         uart_rx_buffer_count_unsafe() >= UART_RX_HIGH_WATERMARK) {
         uart_rx_flow_paused = true;
 		// DEBUG message
-		uart_interface_write_string("\r\n[### XOFF ###]\r\n");
+		// uart_interface_write_string("\r\n[### XOFF ###]\r\n");
  
         uart_send_flow_control_byte(UART_FLOW_XOFF);
     }
@@ -172,7 +172,7 @@ size_t uart_interface_read(uint8_t *out, size_t max_len) {
 
     if (send_xon) {
 		// DEBUG message
-		uart_interface_write_string("\r\n[### XON ###]\r\n");
+		// uart_interface_write_string("\r\n[### XON ###]\r\n");
 
         uart_send_flow_control_byte(UART_FLOW_XON);
     }
