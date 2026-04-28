@@ -1345,7 +1345,7 @@ BEGIN
     "Terminal Settings",
     {"Width (cols):", "Height (rows):", "Font Size:", "Baud Rate:", "Tab stop width:"},
     {"Range 1-132", "Range 1-48", "1=Small, 2=Medium, 3=Large", "Range 300-115200", "Range 1-10"},
-    {26, 15, 2, 9600, 4},
+    {26, 17, 2, 9600, 4},
     {term_width, term_height, font_size, baud_rate, tab_stop_width}
   );
 
