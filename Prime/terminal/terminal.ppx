@@ -1431,7 +1431,7 @@ END;
 
 LOCAL keyboard_helper(key_map, title)
 BEGIN
-  LOCAL x, y, next_y;
+  LOCAL x, y;
   LOCAL title_font_size := 3;
   LOCAL colour := #000000h;
   LOCAL screen_bg_colour := #C0C0C0h;
@@ -1458,10 +1458,9 @@ BEGIN
   y := draw_help_key_range(key_map, 20, 25, 10, y, key_w6, step6);
 
   // Row 2: key ids 26-29 + key id 30 double width
-  next_y := draw_help_key_range(key_map, 26, 29, 10, y, key_w6, step6);
-  draw_help_mapped_key(key_map, 30, 10 + step6 * 4, y, double_key_width);
-  y := next_y;
-
+  draw_help_key_range(key_map, 26, 29, 10, y, key_w6, step6);
+  y := draw_help_mapped_key(key_map, 30, 10 + step6 * 4, y, double_key_width);
+  
   // Row 3: key ids 31-35
   y := draw_help_key_range(key_map, 31, 35, 10, y, key_w5, step5);
 
