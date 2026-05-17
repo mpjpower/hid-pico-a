@@ -23,6 +23,9 @@ A Raspberry Pi Pico application that acts as a USB-HID device, responding to ASC
 - `J <device> {reg,reg,...}`: Read one or more I2C registers (decimal register numbers 0-255)
 	- Example: `J tsl2591 {20,21}`
 	- Response format: `0 {val,val,...}` in the same order as requested registers
+- `P <text>`: Send text bytes over IR using HP 82240B byte-frame LUT encoding
+- `T`: Send a fixed HP 82240B IR self-test line (`HP82240B SELF-TEST OK`) followed by CR/LF
+- `X [duration_ms]`: Send a diagnostic IR carrier burst (default 2000 ms, range 1..10000)
 
 ## Response Format
 
@@ -31,11 +34,11 @@ Most command responses begin with a status prefix:
 - `0 ` (ASCII 48 followed by 32): success
 - `1 ` (ASCII 49 followed by 32): error
 
-This format is used by commands such as `V`, `U`, `L`, `O`, `I`, and `J`.
+This format is used by commands such as `V`, `U`, `L`, `O`, `I`, `J`, `P`, `T`, and `X`.
 
 Examples:
 
-- `0 Version: 1.0.24`
+- `0 Version: 1.0.26`
 - `0 {45,0,12,0}`
 - `1 No I2C ACK from tsl2591`
 
@@ -43,6 +46,22 @@ UART data commands use a different convention:
 
 - `S <text>` sends UART data and may return an empty HID response
 - `R` returns raw queued UART bytes without a status prefix
+
+## Quick IR Printer Test (HP 82240B)
+
+Use these HID command strings (ASCII) to verify IR printer output:
+
+1. Send the built-in diagnostic line:
+    - `T`
+    - Expected response: `0 IR self-test line sent`
+    - Expected printout: `HP82240B SELF-TEST OK` followed by a line break
+2. Send a visible camera diagnostic burst:
+    - `X 3000`
+    - Expected response: `0 IR carrier burst started (3000 ms)`
+    - Expected behavior: many phone cameras show a bright/faint flicker for ~3 seconds
+3. Send custom printer text:
+    - `P HELLO PRIME`
+    - Expected response: `0 Printed 11 byte(s)`
 
 ## Building
 
@@ -106,7 +125,6 @@ For I2C connect:
 - GPIO4 as SDA
 - GPIO5 as SCL
 - Suitable GND and 3V3out
-
 The current implementation uses `i2c0` at 100 kHz.
 
 ## I2C Device Architecture
@@ -138,6 +156,11 @@ If the sensor does not respond on the bus, commands may return:
 - `1 No I2C ACK from tsl2591`
 
 This usually indicates wiring/power/pull-up issues or wrong device address.
+
+
+For IR printer output connect:
+
+- GPIO6 as IR transmit output (through a transistor driver to an IR LED)
 
 ## Host Application
 

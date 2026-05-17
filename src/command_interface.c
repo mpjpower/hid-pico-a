@@ -7,8 +7,14 @@
 #include "i2c_interface.h"
 #include "uart_interface.h"
 #include "led.h"
+#include "ir_printer.h"
 
-#define VERSION "1.0.24"
+#define VERSION "1.0.29"
+
+static const uint8_t IR_SELF_TEST_LINE[] = {
+    'H','P','8','2','2','4','0','B',' ','S','E','L','F','-','T','E','S','T',
+    ' ','O','K', 0x00, 0xE0
+};
 
 static void skip_spaces(char **p) {
     while (**p == ' ') {
@@ -219,6 +225,39 @@ void command_interface_process(const uint8_t *buffer, uint16_t bufsize, char *re
                     snprintf(response, response_size, "1 GetRegs failed for %s", devname);
                 }
             }
+            break;
+        }
+
+        case 'P': {
+            if (actual_len > 2) {
+                const uint8_t *payload = (const uint8_t *) (command + 2);
+                size_t payload_len = strlen(command + 2);
+                ir_printer_send_bytes(payload, payload_len);
+                snprintf(response, response_size, "0 Printed %u byte(s)", (unsigned) payload_len);
+            } else {
+                snprintf(response, response_size, "1 No print data");
+            }
+            break;
+        }
+
+        case 'T': {
+            ir_printer_send_bytes(IR_SELF_TEST_LINE, sizeof(IR_SELF_TEST_LINE));
+            snprintf(response, response_size, "0 IR self-test line sent");
+            break;
+        }
+
+        case 'X': {
+            int burst_ms = 2000;
+
+            if (actual_len > 1) {
+                if (sscanf(command + 2, "%d", &burst_ms) != 1 || burst_ms <= 0 || burst_ms > 10000) {
+                    snprintf(response, response_size, "1 Invalid burst duration (1..10000 ms)");
+                    break;
+                }
+            }
+
+            ir_printer_start_carrier_burst_ms((uint32_t) burst_ms);
+            snprintf(response, response_size, "0 IR carrier burst started (%d ms)", burst_ms);
             break;
         }
 

@@ -51,6 +51,7 @@ set(TARGET_NAME "${PROJECT_NAME}-${PICO_BOARD}")
 add_executable(${TARGET_NAME}
     src/main.c
     src/led.c
+    src/ir_printer.c
     src/hid_transport.c
     src/usb_descriptors.c
     src/command_interface.c
@@ -58,6 +59,8 @@ add_executable(${TARGET_NAME}
     src/i2c_interface.c
     src/lux.c
 )
+
+pico_generate_pio_header(${TARGET_NAME} ${CMAKE_CURRENT_LIST_DIR}/src/ir_printer.pio)
 
 # Include directories
 target_include_directories(${TARGET_NAME}
@@ -81,6 +84,7 @@ target_link_libraries(${TARGET_NAME}
     tinyusb_board 
     pico_unique_id 
     ${WIRELESS_LIBS}
+    hardware_pio
     hardware_i2c
 )
 
