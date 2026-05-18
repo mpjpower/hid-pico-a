@@ -2,7 +2,26 @@
   "version": 3,
   "configurePresets": [
     {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "pico",
+      "inherits": "base",
+      "displayName": "Pico",
+      "description": "Build for Pico (no wireless)",
+      "binaryDir": "${sourceDir}/build-pico",
+      "cacheVariables": {
+        "PICO_BOARD": "pico"
+      }
+    },
+    {
       "name": "default",
+      "inherits": "base",
       "displayName": "Pico W (default)",
       "description": "Build for Pico W with wireless support",
       "binaryDir": "${sourceDir}/build-pico_w",
@@ -12,6 +31,7 @@
     },
     {
       "name": "pico2",
+      "inherits": "base",
       "displayName": "Pico 2",
       "description": "Build for Pico 2 (no wireless)",
       "binaryDir": "${sourceDir}/build-pico2",
@@ -21,12 +41,31 @@
     },
     {
       "name": "pico2_w",
+      "inherits": "base",
       "displayName": "Pico 2 W",
       "description": "Build for Pico 2 W with wireless support",
       "binaryDir": "${sourceDir}/build-pico2_w",
       "cacheVariables": {
         "PICO_BOARD": "pico2_w"
       }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "build-pico",
+      "configurePreset": "pico"
+    },
+    {
+      "name": "build-pico_w",
+      "configurePreset": "default"
+    },
+    {
+      "name": "build-pico2",
+      "configurePreset": "pico2"
+    },
+    {
+      "name": "build-pico2_w",
+      "configurePreset": "pico2_w"
     }
   ]
 }

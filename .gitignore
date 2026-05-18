@@ -1,7 +1,7 @@
-build
-build-pico_w
-build-pico2
-build-pico2_w
+build/
+build-*/
+
+.DS_Store
 
 # Keep shared VS Code project config, ignore local machine-specific settings.
 .vscode/*

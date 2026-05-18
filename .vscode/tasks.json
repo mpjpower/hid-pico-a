@@ -2,20 +2,134 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Compile Project",
+            "label": "Configure Pico",
             "type": "process",
-            "isBuildCommand": true,
-            "command": "${userHome}/.pico-sdk/ninja/v1.12.1/ninja",
-            "args": ["-C", "${workspaceFolder}/build"],
-            "group": "build",
+            "command": "${userHome}/.pico-sdk/cmake/v3.31.5/bin/cmake",
+            "args": ["--preset", "pico", "--fresh"],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": [],
+            "windows": {
+                "command": "${env:USERPROFILE}/.pico-sdk/cmake/v3.31.5/bin/cmake.exe"
+            }
+        },
+        {
+            "label": "Build Pico",
+            "type": "process",
+            "command": "${userHome}/.pico-sdk/cmake/v3.31.5/bin/cmake",
+            "args": ["--build", "--preset", "build-pico"],
+            "dependsOn": ["Configure Pico"],
             "presentation": {
                 "reveal": "always",
                 "panel": "dedicated"
             },
             "problemMatcher": "$gcc",
             "windows": {
-                "command": "${env:USERPROFILE}/.pico-sdk/ninja/v1.12.1/ninja.exe"
+                "command": "${env:USERPROFILE}/.pico-sdk/cmake/v3.31.5/bin/cmake.exe"
             }
+        },
+        {
+            "label": "Configure Pico W",
+            "type": "process",
+            "command": "${userHome}/.pico-sdk/cmake/v3.31.5/bin/cmake",
+            "args": ["--preset", "default", "--fresh"],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": [],
+            "windows": {
+                "command": "${env:USERPROFILE}/.pico-sdk/cmake/v3.31.5/bin/cmake.exe"
+            }
+        },
+        {
+            "label": "Build Pico W",
+            "type": "process",
+            "command": "${userHome}/.pico-sdk/cmake/v3.31.5/bin/cmake",
+            "args": ["--build", "--preset", "build-pico_w"],
+            "dependsOn": ["Configure Pico W"],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": "$gcc",
+            "windows": {
+                "command": "${env:USERPROFILE}/.pico-sdk/cmake/v3.31.5/bin/cmake.exe"
+            }
+        },
+        {
+            "label": "Configure Pico 2",
+            "type": "process",
+            "command": "${userHome}/.pico-sdk/cmake/v3.31.5/bin/cmake",
+            "args": ["--preset", "pico2", "--fresh"],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": [],
+            "windows": {
+                "command": "${env:USERPROFILE}/.pico-sdk/cmake/v3.31.5/bin/cmake.exe"
+            }
+        },
+        {
+            "label": "Build Pico 2",
+            "type": "process",
+            "command": "${userHome}/.pico-sdk/cmake/v3.31.5/bin/cmake",
+            "args": ["--build", "--preset", "build-pico2"],
+            "dependsOn": ["Configure Pico 2"],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": "$gcc",
+            "windows": {
+                "command": "${env:USERPROFILE}/.pico-sdk/cmake/v3.31.5/bin/cmake.exe"
+            }
+        },
+        {
+            "label": "Configure Pico 2 W",
+            "type": "process",
+            "command": "${userHome}/.pico-sdk/cmake/v3.31.5/bin/cmake",
+            "args": ["--preset", "pico2_w", "--fresh"],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": [],
+            "windows": {
+                "command": "${env:USERPROFILE}/.pico-sdk/cmake/v3.31.5/bin/cmake.exe"
+            }
+        },
+        {
+            "label": "Build Pico 2 W",
+            "type": "process",
+            "command": "${userHome}/.pico-sdk/cmake/v3.31.5/bin/cmake",
+            "args": ["--build", "--preset", "build-pico2_w"],
+            "dependsOn": ["Configure Pico 2 W"],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": "$gcc",
+            "windows": {
+                "command": "${env:USERPROFILE}/.pico-sdk/cmake/v3.31.5/bin/cmake.exe"
+            }
+        },
+        {
+            "label": "Compile Project",
+            "type": "shell",
+            "isBuildCommand": true,
+            "command": "echo Building all board variants",
+            "dependsOrder": "sequence",
+            "dependsOn": ["Build Pico", "Build Pico W", "Build Pico 2", "Build Pico 2 W"],
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
         },
         {
             "label": "Run Project",

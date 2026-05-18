@@ -77,11 +77,17 @@ This project uses CMake presets to build for multiple target boards. Each board 
 
 | Board | Preset | Build directory | Output file |
 |-------|--------|-----------------|-------------|
+| Pico | `pico` | `build-pico/` | `hid-pico-a-pico.uf2` |
 | Pico W | `default` | `build-pico_w/` | `hid-pico-a-pico_w.uf2` |
 | Pico 2 | `pico2` | `build-pico2/` | `hid-pico-a-pico2.uf2` |
 | Pico 2 W | `pico2_w` | `build-pico2_w/` | `hid-pico-a-pico2_w.uf2` |
 
 ### Build Commands
+
+**Pico:**
+```bash
+cmake --preset pico && cmake --build build-pico
+```
 
 **Pico W:**
 ```bash
