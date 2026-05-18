@@ -13,10 +13,17 @@
 
 static PIO ir_pio = pio0;
 static unsigned int ir_sm = 0;
+static unsigned int ir_program_offset = 0;
+static pio_sm_config ir_sm_config;
+static bool ir_sm_config_valid = false;
+static bool ir_program_loaded = false;
 
 static unsigned int ir_gpio = IR_PRINTER_GPIO_PIN;
 static bool s_burst_active = false;
 static absolute_time_t s_burst_deadline;
+static bool s_dc_test_active = false;
+static absolute_time_t s_dc_test_deadline;
+static bool s_tx_primed = false;
 
 static const uint32_t BYTE_FRAME_LUT[256] = {
     0xEAAAAAA0, 0xEB4AAAC0, 0xECCAAB20, 0xED2AAB40, 0xED2AACA0, 0xECCAACC0, 0xEB4AAD20, 0xEAAAAD40, 0xF2CAB2A0, 0xF32AB2C0, 0xF4AAB320, 0xF54AB340, 0xF54AB4A0, 0xF4AAB4C0, 0xF32AB520, 0xF2CAB540,
@@ -39,13 +46,16 @@ static const uint32_t BYTE_FRAME_LUT[256] = {
 
 void ir_printer_init(unsigned int gpio_pin) {
     float clkdiv;
-    unsigned int offset;
     pio_sm_config c;
 
     ir_gpio = gpio_pin;
 
-    offset = pio_add_program(ir_pio, &ir_printer_program);
-    c = ir_printer_program_get_default_config(offset);
+    if (!ir_program_loaded) {
+        ir_program_offset = pio_add_program(ir_pio, &ir_printer_program);
+        ir_program_loaded = true;
+    }
+
+    c = ir_printer_program_get_default_config(ir_program_offset);
 
     sm_config_set_out_shift(&c, false, true, 30);
     sm_config_set_sideset_pins(&c, ir_gpio);
@@ -54,15 +64,26 @@ void ir_printer_init(unsigned int gpio_pin) {
     clkdiv = (float) clock_get_hz(clk_sys) / (float) IR_PIO_CLOCK_HZ;
     sm_config_set_clkdiv(&c, clkdiv);
 
+    ir_sm_config = c;
+    ir_sm_config_valid = true;
+
+    pio_sm_set_enabled(ir_pio, ir_sm, false);
     pio_gpio_init(ir_pio, ir_gpio);
     pio_sm_set_consecutive_pindirs(ir_pio, ir_sm, ir_gpio, 1, true);
-
     gpio_set_drive_strength(ir_gpio, GPIO_DRIVE_STRENGTH_12MA);
-    pio_sm_init(ir_pio, ir_sm, offset + ir_printer_offset_ir_start, &c);
+    pio_sm_init(ir_pio, ir_sm, ir_program_offset + ir_printer_offset_ir_start, &ir_sm_config);
     pio_sm_set_enabled(ir_pio, ir_sm, true);
+
+    s_burst_active = false;
+    s_dc_test_active = false;
+    s_tx_primed = false;
 }
 
 void send_ir_frame(uint32_t frame) {
+    if (s_dc_test_active) {
+        return;
+    }
+
     pio_sm_put_blocking(ir_pio, ir_sm, frame);
 
     // A frame is 27 half-bits plus 3 half-bit gap; TX FIFO write is immediate.
@@ -76,6 +97,13 @@ void ir_printer_send_byte(uint8_t c) {
 void ir_printer_send_bytes(const uint8_t *data, size_t len) {
     if (!data || len == 0) {
         return;
+    }
+
+    // Prime the state machine once so the first user-visible frame is not lost
+    // when the TX path has just been initialized.
+    if (!s_tx_primed) {
+        send_ir_frame(0x00000000u);
+        s_tx_primed = true;
     }
 
     for (size_t i = 0; i < len; i++) {
@@ -108,11 +136,47 @@ void ir_printer_start_carrier_burst_ms(uint32_t duration_ms) {
         return;
     }
 
+    if (s_dc_test_active) {
+        return;
+    }
+
     s_burst_deadline = make_timeout_time_ms(duration_ms);
     s_burst_active = true;
 }
 
+void ir_printer_start_dc_test_ms(uint32_t duration_ms) {
+    if (duration_ms == 0u || !ir_sm_config_valid) {
+        return;
+    }
+
+    s_burst_active = false;
+
+    if (!s_dc_test_active) {
+        pio_sm_set_enabled(ir_pio, ir_sm, false);
+        gpio_set_function(ir_gpio, GPIO_FUNC_SIO);
+        gpio_set_dir(ir_gpio, GPIO_OUT);
+        gpio_set_drive_strength(ir_gpio, GPIO_DRIVE_STRENGTH_12MA);
+    }
+
+    gpio_put(ir_gpio, 1);
+    s_dc_test_deadline = make_timeout_time_ms(duration_ms);
+    s_dc_test_active = true;
+}
+
 void ir_printer_task(void) {
+    if (s_dc_test_active) {
+        if (absolute_time_diff_us(get_absolute_time(), s_dc_test_deadline) <= 0) {
+            gpio_put(ir_gpio, 0);
+            pio_gpio_init(ir_pio, ir_gpio);
+            pio_sm_set_consecutive_pindirs(ir_pio, ir_sm, ir_gpio, 1, true);
+            pio_sm_init(ir_pio, ir_sm, ir_program_offset + ir_printer_offset_ir_start, &ir_sm_config);
+            pio_sm_set_enabled(ir_pio, ir_sm, true);
+            s_dc_test_active = false;
+            s_tx_primed = false;
+        }
+        return;
+    }
+
     if (!s_burst_active) {
         return;
     }

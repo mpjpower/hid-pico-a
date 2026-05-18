@@ -25,7 +25,9 @@ A Raspberry Pi Pico application that acts as a USB-HID device, responding to ASC
 	- Response format: `0 {val,val,...}` in the same order as requested registers
 - `P <text>`: Send text bytes over IR using HP 82240B byte-frame LUT encoding
 - `T`: Send a fixed HP 82240B IR self-test line (`HP82240B SELF-TEST OK`) followed by CR/LF
-- `X [duration_ms]`: Send a diagnostic IR carrier burst (default 2000 ms, range 1..10000)
+- `X [duration_ms] [DC]` or `X DC [duration_ms]`: Diagnostic IR output command
+    - Carrier mode (default): `X [duration_ms]` sends 32.768 kHz IR burst (default 2000 ms, range 1..10000)
+    - DC mode: `X DC [duration_ms]` (or `X [duration_ms] DC`) drives GPIO6 steadily high for meter checks (default 1000 ms, range 1..5000)
 
 ## Response Format
 
@@ -59,7 +61,11 @@ Use these HID command strings (ASCII) to verify IR printer output:
     - `X 3000`
     - Expected response: `0 IR carrier burst started (3000 ms)`
     - Expected behavior: many phone cameras show a bright/faint flicker for ~3 seconds
-3. Send custom printer text:
+3. Send a multimeter-friendly DC test pulse:
+    - `X DC 1000`
+    - Expected response: `0 IR DC test started (1000 ms)`
+    - Expected behavior: GPIO6 is held high for 1 second, then normal PIO IR output resumes
+4. Send custom printer text:
     - `P HELLO PRIME`
     - Expected response: `0 Printed 11 byte(s)`
 

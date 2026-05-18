@@ -1,5 +1,6 @@
 #include "command_interface.h"
 
+#include <ctype.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -13,8 +14,36 @@
 
 static const uint8_t IR_SELF_TEST_LINE[] = {
     'H','P','8','2','2','4','0','B',' ','S','E','L','F','-','T','E','S','T',
-    ' ','O','K', 0x00, 0xE0
+    ' ','O','K', '\r', '\n'
 };
+
+static bool str_ieq(const char *a, const char *b) {
+    while (*a && *b) {
+        if (tolower((unsigned char) *a) != tolower((unsigned char) *b)) {
+            return false;
+        }
+        a++;
+        b++;
+    }
+    return *a == '\0' && *b == '\0';
+}
+
+static bool parse_positive_int(const char *s, int *value_out) {
+    char *endptr;
+    long value;
+
+    if (!s || !*s || !value_out) {
+        return false;
+    }
+
+    value = strtol(s, &endptr, 10);
+    if (*endptr != '\0' || value <= 0 || value > 1000000L) {
+        return false;
+    }
+
+    *value_out = (int) value;
+    return true;
+}
 
 static void skip_spaces(char **p) {
     while (**p == ' ') {
@@ -247,17 +276,61 @@ void command_interface_process(const uint8_t *buffer, uint16_t bufsize, char *re
         }
 
         case 'X': {
-            int burst_ms = 2000;
+            int duration_ms = 2000;
+            bool dc_mode = false;
+            char arg1[16] = {0};
+            char arg2[16] = {0};
+            int arg_count = 0;
 
             if (actual_len > 1) {
-                if (sscanf(command + 2, "%d", &burst_ms) != 1 || burst_ms <= 0 || burst_ms > 10000) {
-                    snprintf(response, response_size, "1 Invalid burst duration (1..10000 ms)");
-                    break;
+                arg_count = sscanf(command + 2, "%15s %15s", arg1, arg2);
+
+                if (arg_count >= 1) {
+                    int parsed_value;
+
+                    if (parse_positive_int(arg1, &parsed_value)) {
+                        duration_ms = parsed_value;
+                        if (arg_count == 2) {
+                            if (!str_ieq(arg2, "DC")) {
+                                snprintf(response, response_size, "1 Invalid mode, use DC or omit");
+                                break;
+                            }
+                            dc_mode = true;
+                        }
+                    } else if (str_ieq(arg1, "DC")) {
+                        dc_mode = true;
+                        duration_ms = 1000;
+                        if (arg_count == 2) {
+                            if (!parse_positive_int(arg2, &parsed_value)) {
+                                snprintf(response, response_size, "1 Invalid DC duration (1..5000 ms)");
+                                break;
+                            }
+                            duration_ms = parsed_value;
+                        }
+                    } else {
+                        snprintf(response, response_size, "1 Invalid X arguments");
+                        break;
+                    }
                 }
             }
 
-            ir_printer_start_carrier_burst_ms((uint32_t) burst_ms);
-            snprintf(response, response_size, "0 IR carrier burst started (%d ms)", burst_ms);
+            if (dc_mode) {
+                if (duration_ms < 1 || duration_ms > 5000) {
+                    snprintf(response, response_size, "1 Invalid DC duration (1..5000 ms)");
+                    break;
+                }
+                ir_printer_start_dc_test_ms((uint32_t) duration_ms);
+                snprintf(response, response_size, "0 IR DC test started (%d ms)", duration_ms);
+                break;
+            }
+
+            if (duration_ms < 1 || duration_ms > 10000) {
+                snprintf(response, response_size, "1 Invalid burst duration (1..10000 ms)");
+                break;
+            }
+
+            ir_printer_start_carrier_burst_ms((uint32_t) duration_ms);
+            snprintf(response, response_size, "0 IR carrier burst started (%d ms)", duration_ms);
             break;
         }
 

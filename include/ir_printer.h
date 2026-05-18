@@ -12,6 +12,7 @@ void ir_printer_send_byte(uint8_t c);
 void ir_printer_send_bytes(const uint8_t *data, size_t len);
 void ir_printer_send_carrier_burst_ms(uint32_t duration_ms);
 void ir_printer_start_carrier_burst_ms(uint32_t duration_ms);
+void ir_printer_start_dc_test_ms(uint32_t duration_ms);
 void ir_printer_task(void);
 
 #endif // IR_PRINTER_H
