@@ -57,6 +57,7 @@ void ir_printer_init(unsigned int gpio_pin) {
     pio_gpio_init(ir_pio, ir_gpio);
     pio_sm_set_consecutive_pindirs(ir_pio, ir_sm, ir_gpio, 1, true);
 
+    gpio_set_drive_strength(ir_gpio, GPIO_DRIVE_STRENGTH_12MA);
     pio_sm_init(ir_pio, ir_sm, offset + ir_printer_offset_ir_start, &c);
     pio_sm_set_enabled(ir_pio, ir_sm, true);
 }
