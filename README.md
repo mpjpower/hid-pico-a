@@ -23,7 +23,8 @@ A Raspberry Pi Pico application that acts as a USB-HID device, responding to ASC
 - `J <device> {reg,reg,...}`: Read one or more I2C registers (decimal register numbers 0-255)
 	- Example: `J tsl2591 {20,21}`
 	- Response format: `0 {val,val,...}` in the same order as requested registers
-- `P <text>`: Send text bytes over IR using HP 82240B byte-frame LUT encoding
+- `P <text>`: Send plain text bytes over IR using HP 82240B byte-frame LUT encoding (quotes are not required)
+- `P {b1,b2,...}`: If the first parameter character is `{`, parse explicit decimal byte values (0-255), including 0/null bytes
 - `T`: Send a fixed HP 82240B IR self-test line (`HP82240B SELF-TEST OK`) followed by CR/LF
 - `X [duration_ms] [DC]` or `X DC [duration_ms]`: Diagnostic IR output command
     - Carrier mode (default): `X [duration_ms]` sends 32.768 kHz IR burst (default 2000 ms, range 1..10000)
@@ -40,7 +41,7 @@ This format is used by commands such as `V`, `U`, `L`, `O`, `I`, `J`, `P`, `T`, 
 
 Examples:
 
-- `0 Version: 1.0.26`
+- `0 Version: 1.0.30`
 - `0 {45,0,12,0}`
 - `1 No I2C ACK from tsl2591`
 
@@ -68,6 +69,9 @@ Use these HID command strings (ASCII) to verify IR printer output:
 4. Send custom printer text:
     - `P HELLO PRIME`
     - Expected response: `0 Printed 11 byte(s)`
+5. Send raw printer bytes (including nulls if needed):
+    - `P {27,69,0,255}`
+    - Expected response: `0 Printed 4 byte(s)`
 
 ## Building
 

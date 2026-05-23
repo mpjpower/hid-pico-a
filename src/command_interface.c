@@ -10,7 +10,7 @@
 #include "led.h"
 #include "ir_printer.h"
 
-#define VERSION "1.0.29"
+#define VERSION "1.0.30"
 
 static const uint8_t IR_SELF_TEST_LINE[] = {
     'H','P','8','2','2','4','0','B',' ','S','E','L','F','-','T','E','S','T',
@@ -258,14 +258,43 @@ void command_interface_process(const uint8_t *buffer, uint16_t bufsize, char *re
         }
 
         case 'P': {
-            if (actual_len > 2) {
-                const uint8_t *payload = (const uint8_t *) (command + 2);
-                size_t payload_len = strlen(command + 2);
-                ir_printer_send_bytes(payload, payload_len);
-                snprintf(response, response_size, "0 Printed %u byte(s)", (unsigned) payload_len);
-            } else {
+            char *pp = command + 1;
+            uint8_t p_data[64] = {0};
+            int p_len = -1;
+
+            skip_spaces(&pp);
+            if (*pp == '{') {
+                p_len = parse_u8_list(&pp, p_data, (int) sizeof(p_data));
+                if (p_len < 0) {
+                    snprintf(response, response_size, "1 Invalid format, expected P text or P {b1,b2,...}");
+                    break;
+                }
+
+                skip_spaces(&pp);
+                if (*pp != '\0') {
+                    snprintf(response, response_size, "1 Invalid print data (trailing characters)");
+                    break;
+                }
+            } else if (*pp == '\0') {
                 snprintf(response, response_size, "1 No print data");
+                break;
+            } else {
+                size_t plain_len = strlen(pp);
+                if (plain_len > sizeof(p_data)) {
+                    snprintf(response, response_size, "1 Print data too long (max %u bytes)", (unsigned) sizeof(p_data));
+                    break;
+                }
+                memcpy(p_data, pp, plain_len);
+                p_len = (int) plain_len;
             }
+
+            if (p_len == 0) {
+                snprintf(response, response_size, "1 No print data");
+                break;
+            }
+
+            ir_printer_send_bytes(p_data, (size_t) p_len);
+            snprintf(response, response_size, "0 Printed %u byte(s)", (unsigned) p_len);
             break;
         }
 

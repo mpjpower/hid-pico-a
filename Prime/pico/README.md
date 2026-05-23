@@ -2,7 +2,7 @@
 
 HP PPL library for communicating with the HID Pico A firmware over USB from the HP Prime.
 
-Firmware compatibility: targets Pico firmware version `1.0.20`.
+Firmware compatibility: targets Pico firmware version `1.0.30`.
 
 ## Source file
 
@@ -47,7 +47,7 @@ Depending on the function, the return value may be a status list, a decoded stri
 
 ### `PicoVersion()`
 
-Returns the firmware version string, e.g. `"0 Version: 1.0.23"`.
+Returns the firmware version string, e.g. `"0 Version: 1.0.30"`.
 Returns `0` if no response is received.
 
 ### `LedOn()` / `LedOff()`
@@ -114,6 +114,20 @@ Example:
 
 ```
 Pico.SetRegs("tsl2591", {0,3,1,16})
+```
+
+## IR printer command format
+
+When sending a raw `P` command through `Send()` / `SendTimed()`:
+
+- `P <text>` sends plain string bytes (quotes are not required)
+- `P {b1,b2,...}` sends explicit byte values; this mode is selected only when the first parameter character is `{`
+
+Examples:
+
+```
+Pico.Send("P HELLO PRIME")
+Pico.Send("P {27,69,0,255}")
 ```
 
 ## Low-level transport
