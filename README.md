@@ -18,6 +18,7 @@ A Raspberry Pi Pico application that acts as a USB-HID device, responding to ASC
 - `R`: Read currently queued UART bytes and return them as a raw HID payload
 - `L`: Turn on the LED
 - `O`: Turn off the LED
+
 - `I <device> {reg,val,reg,val,...}`: Set one or more I2C registers (decimal values 0-255)
 	- Example: `I tsl2591 {0,3,1,16}`
 - `J <device> {reg,reg,...}`: Read one or more I2C registers (decimal register numbers 0-255)
@@ -41,7 +42,7 @@ This format is used by commands such as `V`, `U`, `L`, `O`, `I`, `J`, `P`, `T`, 
 
 Examples:
 
-- `0 Version: 1.0.30`
+- `0 Version: 1.0.31`
 - `0 {45,0,12,0}`
 - `1 No I2C ACK from tsl2591`
 
@@ -148,7 +149,28 @@ The current implementation uses `i2c0` at 100 kHz.
 - Common bus and register API is implemented in `i2c_interface.c` / `i2c_interface.h`.
 - Each supported I2C device should be in its own source file.
 - Current device support:
+    - `adxl343.c` provides ADXL343 support at I2C address `0x53` with device name `adxl343`.
 	- `lux.c` provides TSL2591 support with device name `tsl2591`.
+
+## Quick I2C Test (ADXL343)
+
+Use these HID command strings (ASCII) to verify ADXL343 access at I2C address `0x53`:
+
+1. Read the device ID register (`DEVID`, register 0). Expected value is `229` (`0xE5`):
+    - `J adxl343 {0}`
+2. Put the accelerometer into measurement mode and enable full-resolution output:
+    - `I adxl343 {49,8,45,8}`
+3. Read raw X/Y/Z axis registers (`DATAX0..DATAZ1`, registers 50-55):
+    - `J adxl343 {50,51,52,53,54,55}`
+
+Expected response examples:
+
+- `0 {229}`
+- `0 {12,255,44,0,128,255}`
+
+If the sensor does not respond on the bus, commands may return:
+
+- `1 No I2C ACK from adxl343`
 
 ## Quick I2C Test (TSL2591)
 
@@ -228,6 +250,9 @@ def uart_read() -> bytes:
 
 status, payload = send_status_cmd("V")
 print("Version:", status, payload)
+
+status, payload = send_status_cmd("J adxl343 {0}")
+print("ADXL343 ID:", status, payload)
 
 status, payload = send_status_cmd("J tsl2591 {20,21,22,23}")
 print("I2C:", status, payload)

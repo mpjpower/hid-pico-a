@@ -3,6 +3,7 @@
 #include "bsp/board_api.h"
 #include "tusb.h"
 
+#include "adxl343.h"
 #include "i2c_interface.h"
 #include "lux.h"
 #include "uart_interface.h"
@@ -30,6 +31,7 @@ int main() {
 
     // Initialise I2C bus and register devices
     i2c_bus_init();
+    adxl343_register();
     lux_register();
 
     // Initialize TinyUSB
