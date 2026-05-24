@@ -2,7 +2,7 @@
 
 HP PPL library for communicating with the HID Pico A firmware over USB from the HP Prime.
 
-Firmware compatibility: targets Pico firmware version `1.0.30`.
+Firmware compatibility: targets Pico firmware version `1.0.31`.
 
 ## Source file
 
@@ -47,7 +47,7 @@ Depending on the function, the return value may be a status list, a decoded stri
 
 ### `PicoVersion()`
 
-Returns the firmware version string, e.g. `"0 Version: 1.0.30"`.
+Returns the firmware version string, e.g. `"0 Version: 1.0.31"`.
 Returns `0` if no response is received.
 
 ### `LedOn()` / `LedOff()`
@@ -91,6 +91,7 @@ Returns an empty list `{}` if no UART data is received.
 Reads one or more I2C registers from the named device.
 
 - `devname` — string device name registered in firmware (e.g. `"tsl2591"`)
+- Built-in sensor names include `"adxl343"` (I2C address `0x53`) and `"tsl2591"`
 - `regs` — Prime list of register numbers, e.g. `{0,1,20,21}`
 - Sends wire command: `J <devname> {reg,reg,...}`
 - Returns `{0,{val,val,...}}` on success, `{1,<error>}` on failure
@@ -99,6 +100,7 @@ Example:
 
 ```
 Pico.GetRegs("tsl2591", {0,1,20,21})
+Pico.GetRegs("adxl343", {0,50,51,52,53,54,55})
 ```
 
 ### `SetRegs(devname, pairs)`
@@ -114,6 +116,44 @@ Example:
 
 ```
 Pico.SetRegs("tsl2591", {0,3,1,16})
+Pico.SetRegs("adxl343", {49,8,45,8})
+```
+
+## ADXL343 helpers
+
+### `Adxl343Init()`
+
+Configures the ADXL343 for full-resolution measurement mode by writing:
+
+- `DATA_FORMAT` register `49` = `8`
+- `POWER_CTL` register `45` = `8`
+
+Returns the same status format as `SetRegs()`.
+
+Example:
+
+```
+Pico.Adxl343Init()
+```
+
+### `Adxl343DeviceId()`
+
+Reads the ADXL343 `DEVID` register (`0`) and returns `{0,229}` on success.
+
+Example:
+
+```
+Pico.Adxl343DeviceId()
+```
+
+### `Adxl343ReadAxesRaw()`
+
+Reads the six axis data registers (`DATAX0..DATAZ1`, registers `50..55`) and returns signed 16-bit X/Y/Z values as `{0,{x,y,z}}`.
+
+Example:
+
+```
+Pico.Adxl343ReadAxesRaw()
 ```
 
 ## IR printer command format

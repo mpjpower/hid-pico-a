@@ -121,6 +121,59 @@ BEGIN
 END;
 
 
+EXPORT Adxl343Init()
+BEGIN
+  RETURN SetRegs("adxl343", {49,8,45,8});
+END;
+
+
+EXPORT Adxl343DeviceId()
+BEGIN
+  LOCAL resp:=GetRegs("adxl343", {0});
+  LOCAL reslt:=resp(2);
+
+  IF TYPE(resp)==6 AND SIZE(resp)>=2 AND resp(1)==0 AND TYPE(resp(2))==6 AND SIZE(resp(2))==1 THEN
+    RETURN {0,reslt(1)};
+  END;
+
+  RETURN resp;
+END;
+
+
+EXPORT Adxl343ReadAxesRaw()
+BEGIN
+  LOCAL resp:=GetRegs("adxl343", {50,51,52,53,54,55});
+  LOCAL vals;
+
+  IF TYPE(resp)<>6 OR SIZE(resp)<2 OR resp(1)<>0 THEN
+    RETURN resp;
+  END;
+
+  vals:=resp(2);
+  IF TYPE(vals)<>6 OR SIZE(vals)<>6 THEN
+    RETURN {1,"Unexpected ADXL343 data"};
+  END;
+
+  RETURN {0,{
+    DecodeSigned16(vals(1), vals(2)),
+    DecodeSigned16(vals(3), vals(4)),
+    DecodeSigned16(vals(5), vals(6))
+  }};
+END;
+
+
+EXPORT DecodeSigned16(lo, hi)
+BEGIN
+  LOCAL value:=lo+256*hi;
+
+  IF value>=32768 THEN
+    value:=value-65536;
+  END;
+
+  RETURN value;
+END;
+
+
 EXPORT SendUart(msg)
 BEGIN
   // TYPE 2=string, 6=list
