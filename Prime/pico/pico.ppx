@@ -123,7 +123,7 @@ END;
 
 EXPORT Adxl343Init()
 BEGIN
-  RETURN SetRegs("adxl343", {49,8,45,8});
+  RETURN SetRegs("adxl343", {49,1,45,11});
 END;
 
 
@@ -155,9 +155,9 @@ BEGIN
   END;
 
   RETURN {0,{
-    DecodeSigned16(vals(1), vals(2)),
-    DecodeSigned16(vals(3), vals(4)),
-    DecodeSigned16(vals(5), vals(6))
+    DecodeSigned16(vals(2), vals(1)),
+    DecodeSigned16(vals(4), vals(3)),
+    DecodeSigned16(vals(6), vals(5))
   }};
 END;
 
@@ -170,7 +170,7 @@ BEGIN
     value:=value-65536;
   END;
 
-  RETURN value;
+  RETURN ROUND(value/32768,2);
 END;
 
 
