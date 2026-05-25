@@ -1,0 +1,208 @@
+#pragma mode(separator(.,;) integer(h32))
+
+//==========================================================================
+// Tilt sensor library by Mark Power
+// 
+// Supports the ADXL343 3-axis accelerometer over i2c via Raspberry Pi Pico
+//
+// i2c SDA = Pico pin 6
+// i2c SCL = Pico pin 7
+//
+// Important: The Pico program must have been downloaded
+// to the Prime and checked before the PicoTilt library can be used.
+//
+//==========================================================================
+//
+
+EXPORT tiltEnabled;
+EXPORT invert_x;
+EXPORT invert_y;
+EXPORT invert_z;
+
+//==========================================================================
+// Call Init() to set up the accelerometer. 
+//
+// Check the return value to check if tilt sensing is enabled or read the
+// tiltEnabled global variable.
+//==========================================================================
+
+EXPORT Init()
+BEGIN
+  LOCAL sts;
+  tiltEnabled:=0;
+  invert_x:=0;
+  invert_y:=0;
+  invert_z:=0;
+
+  sts:=Pico.Open();
+
+  IF sts(1)==0 THEN
+    // Check the accelerometer is on the i2c bus
+    IF EQ(Pico.GetRegs("adxl343", {0}),{0,{229}}) THEN
+      // Configure accelerometer
+      sts:=Pico.SetRegs("adxl343", {49,1,45,11});
+
+      IF sts(1)==0
+      THEN
+        tiltEnabled:=1;
+      END;
+    END;
+  END;
+
+  RETURN(tiltEnabled);
+END;
+
+//==========================================================================
+// Return {x,y,z} values in the range -1g to +1g
+//==========================================================================
+
+EXPORT Read()
+BEGIN
+  IF tiltEnabled THEN
+    LOCAL resp:=GetRegs("adxl343", {50,51,52,53,54,55});
+
+    IF TYPE(resp)<>6 OR SIZE(resp)<2 OR resp(1)<>0 THEN
+      RETURN("Invalid ADXL343 response");
+    END;
+
+    LOCAL vals:=resp(2);
+
+    IF TYPE(vals)<>6 OR SIZE(vals)<>6 THEN
+      RETURN("Unexpected ADXL343 data");
+    END;
+
+    LOCAL x_res:=DecodeSigned16(vals(2), vals(1));
+    LOCAL y_res:=DecodeSigned16(vals(4), vals(3));
+    LOCAL z_res:=DecodeSigned16(vals(6), vals(5));
+
+    IF invert_x THEN x_res:=-x_res; END;
+    IF invert_y THEN y_res:=-y_res; END;
+    IF invert_z THEN z_res:=-z_res; END;
+
+    LOCAL value:={x_res, y_res, z_res};
+ 
+    RETURN(value);
+  END;
+
+  RETURN({0,0,0}); // Tilt not enabled
+END;
+
+//==========================================================================
+// Close the sensor interface after use
+//==========================================================================
+
+EXPORT Close()
+BEGIN
+  IF tiltEnabled THEN
+    tiltEnabled:=0;
+    // Pico.Closei2c();
+  END;
+END;
+
+//==========================================================================
+// Depending on the orientation of the accelerometer relative to the Prime
+// you might want to swap the direction for x, y and z. Pass in a value of
+// 1 to swap the direction on the appropriate axis.
+//==========================================================================
+
+EXPORT InvertX(val)
+BEGIN
+  invert_x:=val;
+END;
+
+EXPORT InvertY(val)
+BEGIN
+  invert_y:=val;
+END;
+
+EXPORT InvertZ(val)
+BEGIN
+  invert_z:=val;
+END;
+
+//==========================================================================
+// Print {x, y, z} to the terminal
+//==========================================================================
+
+EXPORT TiltTest()    // Output x,y,z to the terminal
+BEGIN
+  Init();
+
+  PRINT;
+
+  REPEAT
+    PRINT(STRING(Read()));
+    WAIT(0.25);
+  UNTIL 0;
+END;
+
+//==========================================================================
+// Show a graphical trace of the amount the sensor is tilted.
+// Y is inverted for Mark's case design.
+// Hold Esc to exit
+//==========================================================================
+
+EXPORT TiltTrace(samples, delay)    // Plot a trace of tilt (x and y, 2d only)
+BEGIN
+  LOCAL d:=3;    // Size of the diamond edges
+
+  LOCAL s:={};
+  LOCAL lp, sz;
+  LOCAL stopRunning:=0;
+
+  Init();
+
+  IF(tiltEnabled) THEN
+
+    InvertY(1);    // Adjust for the orientation of the accelerometer
+
+    s(0):=Read();
+
+    REPEAT
+      DIMGROB_P(G1,320,240,#FFFFFFh);    // Clear G1 while we draw the trace
+
+      s(0):=Read();
+
+      sz:=SIZE(s);
+
+      // If more than the maximum number of sample in the list, remove the first element
+
+      IF sz > samples THEN
+        s:=tail(s);
+        sz:=SIZE(s);
+      END;
+
+      // Draw lines between all the elements in the list
+
+      FOR lp FROM 2 TO sz DO
+        LINE_P(G1, 160+s(lp-1,2)*-110, 120+s(lp-1,1)*110, 160+s(lp,2)*-110, 120+s(lp,1)*110);
+      END;
+
+      // Draw a diamond for the current point
+
+      FILLPOLY_P(G1, {(160-d+s(sz,2)*(-110), 120+s(sz,1)*110), (160+s(sz,2)*(-110), 120+d+s(sz,1)*110), (160+d+s(sz,2)*(-110), 120+s(sz,1)*110), (160+s(sz,2)*-110, 120-d+s(sz,1)*110)}, #0000FFh);
+
+      BLIT(G0, G1);    // Blit the newly drawn lines onto the display
+
+      IF ISKEYDOWN(4) THEN stopRunning:=1; delay:=0; END;    // Esc = End
+      IF delay THEN WAIT(delay); END;
+    UNTIL stopRunning;
+  END;
+
+  Close();
+END;
+
+//==========================================================================
+// Helper to convert to signed 16 bit value to rounded value in the range -1 to +1
+//==========================================================================
+
+DecodeSigned16(lo, hi)
+BEGIN
+  LOCAL value:=lo+256*hi;
+
+  IF value>=32768 THEN
+    value:=value-65536;
+  END;
+
+  RETURN ROUND(value/32768,2);
+END;

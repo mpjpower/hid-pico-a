@@ -119,43 +119,6 @@ Pico.SetRegs("tsl2591", {0,3,1,16})
 Pico.SetRegs("adxl343", {49,8,45,8})
 ```
 
-## ADXL343 helpers
-
-### `Adxl343Init()`
-
-Configures the ADXL343 for full-resolution measurement mode by writing:
-
-- `DATA_FORMAT` register `49` = `8`
-- `POWER_CTL` register `45` = `8`
-
-Returns the same status format as `SetRegs()`.
-
-Example:
-
-```
-Pico.Adxl343Init()
-```
-
-### `Adxl343DeviceId()`
-
-Reads the ADXL343 `DEVID` register (`0`) and returns `{0,229}` on success.
-
-Example:
-
-```
-Pico.Adxl343DeviceId()
-```
-
-### `Adxl343ReadAxesRaw()`
-
-Reads the six axis data registers (`DATAX0..DATAZ1`, registers `50..55`) and returns signed 16-bit X/Y/Z values as `{0,{x,y,z}}`.
-
-Example:
-
-```
-Pico.Adxl343ReadAxesRaw()
-```
-
 ## IR printer command format
 
 When sending a raw `P` command through `Send()` / `SendTimed()`:
