@@ -19,10 +19,13 @@ A Raspberry Pi Pico application that acts as a USB-HID device, responding to ASC
 - `L`: Turn on the LED
 - `O`: Turn off the LED
 
+
 - `I <device> {reg,val,reg,val,...}`: Set one or more I2C registers (decimal values 0-255)
 	- Example: `I tsl2591 {0,3,1,16}`
+    - `device` may be a registered name (for example `tsl2591`) or a numeric 7-bit I2C address (for example `83` or `0x53`)
 - `J <device> {reg,reg,...}`: Read one or more I2C registers (decimal register numbers 0-255)
 	- Example: `J tsl2591 {20,21}`
+    - `device` may be a registered name or a numeric 7-bit I2C address
 	- Response format: `0 {val,val,...}` in the same order as requested registers
 - `P <text>`: Send plain text bytes over IR using HP 82240B byte-frame LUT encoding (quotes are not required)
 - `P {b1,b2,...}`: If the first parameter character is `{`, parse explicit decimal byte values (0-255), including 0/null bytes
@@ -42,7 +45,7 @@ This format is used by commands such as `V`, `U`, `L`, `O`, `I`, `J`, `P`, `T`, 
 
 Examples:
 
-- `0 Version: 1.0.31`
+- `0 Version: 1.0.32`
 - `0 {45,0,12,0}`
 - `1 No I2C ACK from tsl2591`
 
@@ -148,9 +151,26 @@ The current implementation uses `i2c0` at 100 kHz.
 
 - Common bus and register API is implemented in `i2c_interface.c` / `i2c_interface.h`.
 - Each supported I2C device should be in its own source file.
+- If `I`/`J` is given a numeric device token and there is no registered device with that name, firmware treats the token as a raw 7-bit I2C address and performs generic register read/write operations.
 - Current device support:
     - `adxl343.c` provides ADXL343 support at I2C address `0x53` with device name `adxl343`.
 	- `lux.c` provides TSL2591 support with device name `tsl2591`.
+
+## Quick I2C Test (Raw Address Access)
+
+Use these HID command strings (ASCII) to verify direct register access by numeric address:
+
+1. Read ADXL343 `DEVID` register using decimal address 83 (`0x53`):
+    - `J 83 {0}`
+2. Configure ADXL343 using hexadecimal address notation:
+    - `I 0x53 {49,8,45,8}`
+3. Read axis registers directly by address:
+    - `J 0x53 {50,51,52,53,54,55}`
+
+Expected behavior:
+
+- If the address ACKs, `J` returns `0 {val,val,...}`.
+- If there is no device at the address, responses may return `1 No I2C ACK from <address>`.
 
 ## Quick I2C Test (ADXL343)
 
