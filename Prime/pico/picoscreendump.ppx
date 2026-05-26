@@ -1,0 +1,108 @@
+#pragma mode( separator(.,;) integer(h32) )
+
+// Simple routine to print a GROB, to the HP82240B printer via
+// Raspberry Pi Pico. Prime must have the Pico library loaded
+// and checked before using this file.
+
+// Notes:
+
+// 1 - The 0.25s wait has been added to prevent buffer overruns in
+// the printer.
+
+// 2 - The 1.8s maximum wait is used to ensure that the printer prints
+// the data before the buffer overruns as per the HP82240 interfacing
+// guide.
+
+// For deubugging purposes comment out the Pico commands and
+// uncomment the graphics commands. This will show a black and white
+// graphic the size and horizontal resolution of the printer and
+// allow checking of the luma and multi-pixel conversions.
+
+RGBtoLuma(gr,x,y)
+BEGIN
+  RETURN(RGBtoLuma(GETPIX_P(gr,x,y)));
+END;
+
+RGBtoLuma(px)
+BEGIN
+  LOCAL r:=B→R(BITSR(BITAND(px, #FF0000h),16));
+  LOCAL g:=B→R(BITSR(BITAND(px, #00FF00h),8));
+  LOCAL b:=B→R(BITAND(px, #0000FFh));
+  LOCAL c:=0.299*r + 0.587*g + 0.114*b;
+
+  RETURN (c);
+END;
+
+EXPORT ScreenDump(g, threshold)
+BEGIN
+  // DIMGROB_P(G9,160,120,#FFFFFFh);
+ 
+  LOCAL sts:=Pico.Open();
+
+  IF sts(1)<>0 THEN
+    RETURN(sts);
+  END;
+
+  Pico.Send("P {4}");
+
+  LOCAL outputWidth:=160;
+  LOCAL outputHeight:=120;
+  LOCAL pages:=outputHeight/8;
+  LOCAL page;
+  LOCAL outX, outY, srcX, srcY;
+  LOCAL rowBase;
+  LOCAL byte, bit;
+  LOCAL p1, p2, p3, p4;
+  LOCAL avgLuma;
+  LOCAL printBuffer;
+
+  FOR page FROM 0 TO pages-1 DO
+    Pico.Send("P {27, 160}");
+    rowBase:=page*8;
+    printBuffer:="P {";
+
+    FOR outX FROM 0 TO outputWidth-1 DO
+      byte:=0;
+
+      FOR bit FROM 0 TO 7 DO
+        outY:= rowBase + bit;
+        srcX:= outX * 2;
+        srcY:= outY * 2;
+
+        p1:= RGBtoLuma(g,srcX,srcY);
+        p2:= RGBtoLuma(GETPIX_P(g,srcX,srcY+1));
+        p3:= RGBtoLuma(GETPIX_P(g,srcX+1,srcY));
+        p4:= RGBtoLuma(GETPIX_P(g,srcX+1,srcY+1));
+
+        avgLuma := (p1 + p2 + p3 + p4) / 4;
+
+        IF avgLuma ≥ threshold THEN
+          // PIXON_P(G9,outX,outY);
+        ELSE
+          byte:= byte + 2^bit;
+          // PIXOFF_P(G9,outX,outY);
+        END;
+      END;
+
+      printBuffer:=printBuffer+byte;
+            
+      IF SIZE(printBuffer) > 50 THEN
+        printBuffer:=printBuffer+"}";
+        Pico.Send(printBuffer);
+        printBuffer:="P {";
+        WAIT(.25);
+      ELSE
+        printBuffer:=printBuffer+",";
+      END;
+
+    END;
+
+    // write LF after each row of 160 bytes
+    printBuffer:=printBuffer+"4}";
+    Pico.Send(printBuffer);
+    WAIT(1.8);
+  END;
+  // BLIT_P(G0,G9);
+  // FREEZE;
+  // WAIT;
+END;
