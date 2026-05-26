@@ -12,8 +12,10 @@ to a remote UART device through the Pico serial API (`pico.ppx`).
 
 1. Copy `pico.ppx` and `terminal.ppx` to the Prime, edit them and run Check on each to make sure they compile without syntax errors.
 2. Run `ANSI_Terminal()`.
-3. Choose **Settings** to configure width, height, font size, baud rate, and tab stop width.
-4. Choose **Start Terminal** to begin the terminal loop.
+3. Configure width, height, font size, baud rate, and tab stop width.
+4. Press Ok to start the terminal.
+5. The Help key shows the keyboard layout respecting the Alpha and Shift keys. Press the Help key again to exit help.
+6. To exit the terminal, press the home key.
 
 ## Current defaults
 
@@ -117,7 +119,8 @@ Application cursor-key sequences ESC O A/B/C/D are also accepted and mapped to c
 
 | Key                | Sends               |
 |--------------------|---------------------|
-| Menu (id 13)       | Exit terminal       |
+| Home (id 5)        | Exit terminal       |
+| Help (id 3)        | Displays help       |
 | Esc (id 4)         | ASCII ESC (27)      |
 | Enter (id 30)      | CR (13)             |
 | Shift + Enter      | LF (10)             |

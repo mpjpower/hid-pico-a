@@ -1190,7 +1190,7 @@ BEGIN
         show_active_help();
       END;
 
-      IF key == 13 THEN  // HP Prime Menu key: exit terminal
+      IF key == 5 THEN  // HP Prime Home key: exit terminal
         terminal_exit_requested := 1;
       END;
 
@@ -1359,8 +1359,9 @@ BEGIN
     IF baud_rate < 300 THEN baud_rate := 300; END;
     IF baud_rate > 115200 THEN baud_rate := 115200; END;
     IF tab_stop_width > 10 THEN tab_stop_width := 10; END;
-	IF tab_stop_width < 1 THEN tab_stop_width := 1; END;
+  	IF tab_stop_width < 1 THEN tab_stop_width := 1; END;
   END;
+  RETURN ok;
 END;
 
 // ============================================================================
@@ -1484,57 +1485,61 @@ END;
 
 LOCAL show_active_help()
 BEGIN
-  IF alpha_mode THEN
-    IF pending_shift OR shift_lock THEN
-      keyboard_helper(alpha_upper_outputs, "Alpha Shift Mode");
-    ELSE
-      keyboard_helper(alpha_lower_outputs, "Alpha Mode");
-    END;
-  ELSE
-    IF pending_shift OR shift_lock THEN
-      keyboard_helper(numeric_shift_outputs, "Numeric Shift Mode");
-    ELSE
-      keyboard_helper(numeric_key_outputs, "Numeric Mode");
-    END;
-  END;
+  LOCAL key;
+  LOCAL title;
+  LOCAL had_shift;
 
-  WAIT();
-
-  BLIT_P(G0, G1); // Restore terminal screen
-END;
-
-LOCAL show_keyboard_help_menu()
-BEGIN
-  LOCAL choice := 1;
-  LOCAL modes := {"Alpha", "Alpha Shift", "Numeric", "Numeric Shift", "Done"};
-  
   WHILE 1 DO
-    CHOOSE(choice, "Keyboard Help", modes);
+    // Build title with annunciators
+    title := "";
     
-    CASE
-      IF choice == 0 OR choice == 5 THEN
-        BREAK;
+    IF alpha_mode THEN
+      title := "Alpha";
+      IF pending_shift OR shift_lock THEN
+        title := title + " Shift";
+        keyboard_helper(alpha_upper_outputs, title + " Mode");
+      ELSE
+        keyboard_helper(alpha_lower_outputs, title + " Mode");
       END;
-      IF choice == 1 THEN
-        keyboard_helper(alpha_lower_outputs, "Alpha Mode");
-        WAIT();
-      END;
-      IF choice == 2 THEN
-        keyboard_helper(alpha_upper_outputs, "Alpha Shift Mode");
-        WAIT();
-      END;
-      IF choice == 3 THEN
-        keyboard_helper(numeric_key_outputs, "Numeric Mode");
-        WAIT();
-      END;
-      IF choice == 4 THEN
-        keyboard_helper(numeric_shift_outputs, "Numeric Shift Mode");
-        WAIT();
+    ELSE
+      IF pending_shift OR shift_lock THEN
+        title := "Numeric Shift";
+        keyboard_helper(numeric_shift_outputs, title + " Mode");
+      ELSE
+        title := "Numeric";
+        keyboard_helper(numeric_key_outputs, title + " Mode");
       END;
     END;
+
+    key := GETKEY();
+
+    IF key == 3 THEN  // Help key: exit help screen
+      BREAK;
+    END;
+
+    IF key == 36 THEN  // Alpha key: toggle alpha mode, clear pending shift
+      alpha_mode := 1 - alpha_mode;
+      pending_shift := 0;
+    END;
+
+    IF key == 41 THEN  // Shift key: one-shot or lock
+      IF pending_shift THEN
+        shift_lock := 1 - shift_lock;
+        pending_shift := 0;
+      ELSE
+        pending_shift := 1;
+      END;
+    END;
+
+    IF key >= 0 AND key <> 36 AND key <> 41 THEN
+      // Any other key: exit help and let it be processed normally
+      // Put the key back for the terminal to process
+      BREAK;
+    END;
   END;
-  
-  BLIT_P(G0, G2);
+
+  mark_indicator_dirty();
+  BLIT_P(G0, G1); // Restore terminal screen
 END;
 
 // ============================================================================
@@ -1551,26 +1556,8 @@ BEGIN
   TDim:=R→B(1800*1000);
   TOff:=R→B(2000*1000);
 
-  LOCAL choice := 1;
-  LOCAL menu_options := {"Start Terminal", "Settings", "Keyboard Help", "Exit"};
-  
-  WHILE 1 DO
-    CHOOSE(choice, "HP Prime ANSI Terminal", menu_options);
-    
-    CASE
-      IF choice == 0 OR choice == 4 THEN
-        BREAK;
-      END;
-      IF choice == 1 THEN
-        run_terminal();
-      END;
-      IF choice == 2 THEN
-        show_settings_menu();
-      END;
-      IF choice == 3 THEN
-        show_keyboard_help_menu();
-      END;
-    END;
+  IF show_settings_menu() THEN
+    run_terminal();
   END;
 
   // Reset screen dimming
