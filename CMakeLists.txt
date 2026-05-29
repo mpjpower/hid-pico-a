@@ -51,6 +51,8 @@ set(TARGET_NAME "${PROJECT_NAME}-${PICO_BOARD}")
 add_executable(${TARGET_NAME}
     src/main.c
     src/adxl343.c
+    src/bme680.c
+    src/bme688.c
     src/led.c
     src/ir_printer.c
     src/hid_transport.c

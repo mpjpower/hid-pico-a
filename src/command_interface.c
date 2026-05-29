@@ -10,7 +10,7 @@
 #include "led.h"
 #include "ir_printer.h"
 
-#define VERSION "1.0.32"
+#define VERSION "1.0.34"
 
 static const uint8_t IR_SELF_TEST_LINE[] = {
     'H','P','8','2','2','4','0','B',' ','S','E','L','F','-','T','E','S','T',

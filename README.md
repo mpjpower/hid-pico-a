@@ -45,7 +45,7 @@ This format is used by commands such as `V`, `U`, `L`, `O`, `I`, `J`, `P`, `T`, 
 
 Examples:
 
-- `0 Version: 1.0.32`
+- `0 Version: 1.0.34`
 - `0 {45,0,12,0}`
 - `1 No I2C ACK from tsl2591`
 
@@ -154,6 +154,8 @@ The current implementation uses `i2c0` at 100 kHz.
 - If `I`/`J` is given a numeric device token and there is no registered device with that name, firmware treats the token as a raw 7-bit I2C address and performs generic register read/write operations.
 - Current device support:
     - `adxl343.c` provides ADXL343 support at I2C address `0x53` with device name `adxl343`.
+    - `bme680.c` provides BME680 support at I2C address `0x76` with device name `bme680`.
+    - `bme688.c` provides BME688 support at I2C address `0x76` with device name `bme688`.
 	- `lux.c` provides TSL2591 support with device name `tsl2591`.
 
 ## Quick I2C Test (Raw Address Access)
@@ -191,6 +193,36 @@ Expected response examples:
 If the sensor does not respond on the bus, commands may return:
 
 - `1 No I2C ACK from adxl343`
+
+## Quick I2C Test (BME680)
+
+Use these HID command strings (ASCII) to verify BME680 access at I2C address `0x76`:
+
+1. Read the chip ID register (`CHIP_ID`, register `208`). Expected value is `97` (`0x61`):
+    - `J bme680 {208}`
+2. Read the status register to confirm communication:
+    - `J bme680 {243}`
+3. If your module is strapped to address `0x77`, use the numeric address fallback:
+    - `J 0x77 {208}`
+
+If the sensor does not respond on the bus, commands may return:
+
+- `1 No I2C ACK from bme680`
+
+## Quick I2C Test (BME688)
+
+Use these HID command strings (ASCII) to verify BME688 access at I2C address `0x76`:
+
+1. Read the chip ID register (`CHIP_ID`, register `208`). Expected value is `97` (`0x61`):
+    - `J bme688 {208}`
+2. Read the status register to confirm communication:
+    - `J bme688 {243}`
+3. If your module is strapped to address `0x77`, use the numeric address fallback:
+    - `J 0x77 {208}`
+
+If the sensor does not respond on the bus, commands may return:
+
+- `1 No I2C ACK from bme688`
 
 ## Quick I2C Test (TSL2591)
 

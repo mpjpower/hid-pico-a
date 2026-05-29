@@ -4,6 +4,8 @@
 #include "tusb.h"
 
 #include "adxl343.h"
+#include "bme680.h"
+#include "bme688.h"
 #include "i2c_interface.h"
 #include "lux.h"
 #include "uart_interface.h"
@@ -32,6 +34,8 @@ int main() {
     // Initialise I2C bus and register devices
     i2c_bus_init();
     adxl343_register();
+    bme680_register();
+    bme688_register();
     lux_register();
 
     // Initialize TinyUSB
