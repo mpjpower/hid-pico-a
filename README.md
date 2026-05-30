@@ -27,6 +27,8 @@ A Raspberry Pi Pico application that acts as a USB-HID device, responding to ASC
 	- Example: `J tsl2591 {20,21}`
     - `device` may be a registered name or a numeric 7-bit I2C address
 	- Response format: `0 {val,val,...}` in the same order as requested registers
+- `M bme68x {gas_en,heater_ms_h,heater_ms_l,heater_temp_h,heater_temp_l,filter,osr_hum,osr_temp}`: Configure the BME68x sensor
+- `N bme68x`: Read calibrated BME68x sensor data
 - `P <text>`: Send plain text bytes over IR using HP 82240B byte-frame LUT encoding (quotes are not required)
 - `P {b1,b2,...}`: If the first parameter character is `{`, parse explicit decimal byte values (0-255), including 0/null bytes
 - `T`: Send a fixed HP 82240B IR self-test line (`HP82240B SELF-TEST OK`) followed by CR/LF
