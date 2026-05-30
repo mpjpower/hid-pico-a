@@ -53,6 +53,8 @@ add_executable(${TARGET_NAME}
     src/adxl343.c
     src/bme680.c
     src/bme688.c
+    src/bme68x.c
+    src/bme68x_pico.c
     src/led.c
     src/ir_printer.c
     src/hid_transport.c

@@ -247,6 +247,51 @@ If the sensor does not respond on the bus, commands may return:
 
 This usually indicates wiring/power/pull-up issues or wrong device address.
 
+## Complex Sensor Commands (BME68x)
+
+The firmware supports advanced environmental sensor measurements via the Bosch BME68x API (BME680/BME688). These commands provide calibrated sensor readings with unit conversion.
+
+### `N <device>`: Read BME68x Sensor Data
+
+Triggers a forced-mode measurement and returns calibrated readings.
+
+- **Command format**: `N bme68x`
+- **Response format**: `0 {temp_cC,pressure_hPa_x100,humidity_pct_x100,gas_res_kohm_x100,gas_valid}`
+  - Values are integers with scaling factors (divide by 100 to get actual units)
+  - `gas_valid` is 1 if the gas measurement is valid, 0 otherwise
+- **Example**:
+  - Command: `N bme68x`
+  - Response: `0 {2487,101343,5203,4521,1}` (24.87°C, 1013.43 hPa, 52.03%, 45.21 kΩ, gas valid)
+- **Error responses**:
+  - `1 BME68x read failed` if the sensor cannot be read
+  - `1 Unknown sensor name` if device is not recognized
+
+### `M <device> {params}`: Configure BME68x Sensor
+
+Configures sensor oversampling, filtering, and heater parameters.
+
+- **Command format**: `M bme68x {gas_en,heater_ms_h,heater_ms_l,heater_temp_h,heater_temp_l,filter,osr_hum,osr_temp}`
+  - `gas_en`: 1 to enable gas measurement, 0 to disable
+  - `heater_ms_h`, `heater_ms_l`: Heater duration in ms (16-bit: high byte, low byte). Example: 150 ms = {0, 150}
+  - `heater_temp_h`, `heater_temp_l`: Heater temperature in °C (16-bit: high byte, low byte). Example: 320°C = {1, 64}
+  - `filter`: IIR filter coefficient (0-7, higher = more filtering). Typical: 3
+  - `osr_hum`: Humidity oversampling (0-4, 0=skip, 1=1x, 2=2x, 3=4x, 4=8x, 5=16x). Typical: 2
+  - `osr_temp`: Temperature oversampling (same range). Typical: 3
+  - `osr_pres`: Pressure oversampling (same range, packed in upper nibble or lower nibble). Typical: 4
+- **Example**:
+  - Command: `M bme68x {1,0,150,1,64,3,2,3}` (enable gas, 150ms heater, 320°C, filter=3, osr_hum=2, osr_temp=3, osr_pres=3)
+  - Response: `0 BME68x configured`
+- **Error responses**:
+  - `1 Expected 8 config params` if wrong number of parameters
+  - `1 BME68x config failed` if configuration fails
+
+### Notes on BME68x Integration
+
+- Both BME680 (I2C address 0x76) and BME688 (variant-aware) are supported automatically via the Bosch API.
+- Calibration data is read from sensor NVM during initialization.
+- Forced mode measurement typically completes in 100-200 ms depending on oversampling settings.
+- Pico lacks a hardware FPU; floating-point calculations may be slower than on host systems.
+- For maximum accuracy, allow the sensor to stabilize after power-up (1-2 seconds) before taking critical measurements.
 
 For IR printer output connect:
 

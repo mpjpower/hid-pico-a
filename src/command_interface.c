@@ -9,8 +9,9 @@
 #include "uart_interface.h"
 #include "led.h"
 #include "ir_printer.h"
+#include "bme68x_pico.h"
 
-#define VERSION "1.0.34"
+#define VERSION "1.0.35"
 
 static const uint8_t IR_SELF_TEST_LINE[] = {
     'H','P','8','2','2','4','0','B',' ','S','E','L','F','-','T','E','S','T',
@@ -360,6 +361,90 @@ void command_interface_process(const uint8_t *buffer, uint16_t bufsize, char *re
 
             ir_printer_start_carrier_burst_ms((uint32_t) duration_ms);
             snprintf(response, response_size, "0 IR carrier burst started (%d ms)", duration_ms);
+            break;
+        }
+
+        case 'N': {
+            // N bme68x: Read BME68x sensor data
+            char devname[32] = {0};
+            char *np = command + 2;
+            bme68x_reading_t reading;
+            
+            if (parse_devname(&np, devname, sizeof(devname)) != 0) {
+                snprintf(response, response_size, "1 Missing device name");
+                break;
+            }
+            
+            if (!str_ieq(devname, "bme68x")) {
+                snprintf(response, response_size, "1 Unknown sensor name");
+                break;
+            }
+            
+            if (bme68x_pico_read(&reading) != 0) {
+                snprintf(response, response_size, "1 BME68x read failed");
+                break;
+            }
+            
+            // Return {temp*100, pressure*100, humidity*100, gas_resistance*100, gas_valid}
+            // Using integers to avoid floating-point transmission issues
+            int temp_int = (int)(reading.temperature * 100.0f);
+            int pres_int = (int)(reading.pressure * 100.0f);
+            int hum_int = (int)(reading.humidity * 100.0f);
+            int gas_int = (int)(reading.gas_resistance * 100.0f);
+            
+            snprintf(response, response_size, "0 {%d,%d,%d,%d,%d}", 
+                     temp_int, pres_int, hum_int, gas_int, reading.gas_valid ? 1 : 0);
+            break;
+        }
+
+        case 'M': {
+            // M bme68x {gas_en,heater_ms,heater_temp,filter,osr_hum,osr_temp,osr_pres,mode}
+            // Configure BME68x sensor
+            char devname[32] = {0};
+            uint8_t params[8];
+            char *mp = command + 2;
+            int param_count;
+            bme68x_config_t cfg;
+            
+            if (parse_devname(&mp, devname, sizeof(devname)) != 0) {
+                snprintf(response, response_size, "1 Missing device name");
+                break;
+            }
+            
+            if (!str_ieq(devname, "bme68x")) {
+                snprintf(response, response_size, "1 Unknown sensor name");
+                break;
+            }
+            
+            param_count = parse_u8_list(&mp, params, 8);
+            
+            if (param_count == 0) {
+                // No parameters: just acknowledge
+                snprintf(response, response_size, "0 BME68x ready");
+                break;
+            }
+            
+            if (param_count != 8) {
+                snprintf(response, response_size, "1 Expected 8 config params");
+                break;
+            }
+            
+            // Parse configuration
+            cfg.gas_enabled = params[0];
+            cfg.heater_dur = (uint16_t)((params[1] << 8) | params[2]);
+            cfg.heater_temp = (uint16_t)((params[3] << 8) | params[4]);
+            cfg.filter_coeff = params[5];
+            cfg.osr_hum = params[6];
+            cfg.osr_temp = params[7];
+            cfg.osr_pres = params[7];
+            cfg.mode = 1;  // Forced mode
+            
+            if (bme68x_pico_configure(&cfg) != 0) {
+                snprintf(response, response_size, "1 BME68x config failed");
+                break;
+            }
+            
+            snprintf(response, response_size, "0 BME68x configured");
             break;
         }
 

@@ -6,6 +6,7 @@
 #include "adxl343.h"
 #include "bme680.h"
 #include "bme688.h"
+#include "bme68x_pico.h"
 #include "i2c_interface.h"
 #include "lux.h"
 #include "uart_interface.h"
@@ -37,6 +38,7 @@ int main() {
     bme680_register();
     bme688_register();
     lux_register();
+    bme68x_pico_init();  // Initialize BME68x sensor wrapper
 
     // Initialize TinyUSB
     hid_transport_init();
