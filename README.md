@@ -22,17 +22,17 @@ A Raspberry Pi Pico application that acts as a USB-HID device, responding to ASC
     - `device` may be a registered name or a numeric 7-bit I2C address
 	- Response format: `0 {val,val,...}` in the same order as requested registers
 - `K <device> {byte,byte,...}`: Write raw bytes directly to an I2C device address without a register prefix
-- `L`: Turn on the LED
+- `L` Turn on the LED
 - `M bme68x {gas_en,heater_ms_h,heater_ms_l,heater_temp_h,heater_temp_l,filter,osr_hum,osr_temp}`: Configure the BME68x sensor
 - `N bme68x`: Read calibrated BME68x sensor data
-- `O`: Turn off the LED
+- `O` Turn off the LED
 - `P <text>`: Send plain text bytes over IR using HP 82240B byte-frame LUT encoding (quotes are not required)
 - `P {b1,b2,...}`: If the first parameter character is `{`, parse explicit decimal byte values (0-255), including 0/null bytes
 - `R`: Read currently queued UART bytes and return them as a raw HID payload
 - `S <text>`: Send raw text bytes over UART. This command does not return a status-prefixed response.
-- `T`: Send a fixed HP 82240B IR self-test line (`HP82240B SELF-TEST OK`) followed by CR/LF
+- `T` Send a fixed HP 82240B IR self-test line (`HP82240B SELF-TEST OK`) followed by CR/LF
 - `U <baudrate>`: Set UART baudrate (e.g., `U 9600`)
-- `V`: Get version number
+- `V` Get firmware version number
 - `X [duration_ms] [DC]` or `X DC [duration_ms]`: Diagnostic IR output command
     - Carrier mode (default): `X [duration_ms]` sends 32.768 kHz IR burst (default 2000 ms, range 1..10000)
     - DC mode: `X DC [duration_ms]` (or `X [duration_ms] DC`) drives GPIO6 steadily high for meter checks (default 1000 ms, range 1..5000)
