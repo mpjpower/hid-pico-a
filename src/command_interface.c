@@ -11,7 +11,7 @@
 #include "ir_printer.h"
 #include "bme68x_pico.h"
 
-#define VERSION "1.0.35"
+#define VERSION "1.0.36"
 
 static const uint8_t IR_SELF_TEST_LINE[] = {
     'H','P','8','2','2','4','0','B',' ','S','E','L','F','-','T','E','S','T',
@@ -253,6 +253,35 @@ void command_interface_process(const uint8_t *buffer, uint16_t bufsize, char *re
                     snprintf(response, response_size, "1 No I2C ACK from %s", devname);
                 } else {
                     snprintf(response, response_size, "1 GetRegs failed for %s", devname);
+                }
+            }
+            break;
+        }
+
+        case 'K': {
+            char devname[32] = {0};
+            uint8_t k_data[64] = {0};
+            char *kp = command + 2;
+            int k_count;
+
+            if (parse_devname(&kp, devname, sizeof(devname)) != 0) {
+                snprintf(response, response_size, "1 Missing I2C device name");
+                break;
+            }
+
+            k_count = parse_u8_list(&kp, k_data, (int) sizeof(k_data));
+
+            if (k_count <= 0) {
+                snprintf(response, response_size, "1 Invalid format, expected K <dev> {b1,b2,...}");
+            } else if (WriteBytes(devname, k_data, k_count) == 0) {
+                snprintf(response, response_size, "0 Wrote %d byte(s) to %s", k_count, devname);
+            } else {
+                if (!i2c_device_known(devname)) {
+                    snprintf(response, response_size, "1 Unknown I2C dev %s", devname);
+                } else if (!i2c_device_probe(devname)) {
+                    snprintf(response, response_size, "1 No I2C ACK from %s", devname);
+                } else {
+                    snprintf(response, response_size, "1 WriteBytes failed for %s", devname);
                 }
             }
             break;

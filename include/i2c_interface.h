@@ -25,6 +25,11 @@ void i2c_register_device(const i2c_device_t *dev);
 // Returns 0 on success, -1 on failure.
 int SetRegs(const char *device, uint8_t *regs, uint8_t *vals, int count);
 
+// Write raw bytes directly to the device address without prepending a register.
+// The device may be a registered name or a numeric 7-bit I2C address.
+// Returns 0 on success, -1 on failure.
+int WriteBytes(const char *device, const uint8_t *bytes, int count);
+
 // Read 'count' registers from the named device into out[].
 // regs[i] is the register address; result is stored in out[i].
 // Returns 0 on success, -1 on failure.

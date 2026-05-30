@@ -7,18 +7,12 @@ A Raspberry Pi Pico application that acts as a USB-HID device, responding to ASC
 - USB-HID interface for communication
 - Command parsing: single letter commands with optional parameters
 - UART configuration and communication
-- I2C device interface with per-device implementation files
-- Version reporting
+- I2C device interface with per-device implementation files, generic i2c support and high level helpers for specific sensors
+- IR printing to HP82240 Infrared Printer
+- Enabling/disabling Pico LED
+- Pico Firmware version reporting
 
 ## Supported Commands
-
-- `V`: Get version number
-- `U <baudrate>`: Set UART baudrate (e.g., `U 9600`)
-- `S <text>`: Send raw text bytes over UART. This command does not return a status-prefixed response.
-- `R`: Read currently queued UART bytes and return them as a raw HID payload
-- `L`: Turn on the LED
-- `O`: Turn off the LED
-
 
 - `I <device> {reg,val,reg,val,...}`: Set one or more I2C registers (decimal values 0-255)
 	- Example: `I tsl2591 {0,3,1,16}`
@@ -27,11 +21,18 @@ A Raspberry Pi Pico application that acts as a USB-HID device, responding to ASC
 	- Example: `J tsl2591 {20,21}`
     - `device` may be a registered name or a numeric 7-bit I2C address
 	- Response format: `0 {val,val,...}` in the same order as requested registers
+- `K <device> {byte,byte,...}`: Write raw bytes directly to an I2C device address without a register prefix
+- `L`: Turn on the LED
 - `M bme68x {gas_en,heater_ms_h,heater_ms_l,heater_temp_h,heater_temp_l,filter,osr_hum,osr_temp}`: Configure the BME68x sensor
 - `N bme68x`: Read calibrated BME68x sensor data
+- `O`: Turn off the LED
 - `P <text>`: Send plain text bytes over IR using HP 82240B byte-frame LUT encoding (quotes are not required)
 - `P {b1,b2,...}`: If the first parameter character is `{`, parse explicit decimal byte values (0-255), including 0/null bytes
+- `R`: Read currently queued UART bytes and return them as a raw HID payload
+- `S <text>`: Send raw text bytes over UART. This command does not return a status-prefixed response.
 - `T`: Send a fixed HP 82240B IR self-test line (`HP82240B SELF-TEST OK`) followed by CR/LF
+- `U <baudrate>`: Set UART baudrate (e.g., `U 9600`)
+- `V`: Get version number
 - `X [duration_ms] [DC]` or `X DC [duration_ms]`: Diagnostic IR output command
     - Carrier mode (default): `X [duration_ms]` sends 32.768 kHz IR burst (default 2000 ms, range 1..10000)
     - DC mode: `X DC [duration_ms]` (or `X [duration_ms] DC`) drives GPIO6 steadily high for meter checks (default 1000 ms, range 1..5000)
@@ -43,7 +44,7 @@ Most command responses begin with a status prefix:
 - `0 ` (ASCII 48 followed by 32): success
 - `1 ` (ASCII 49 followed by 32): error
 
-This format is used by commands such as `V`, `U`, `L`, `O`, `I`, `J`, `P`, `T`, and `X`.
+This format is used by commands such as `V`, `U`, `L`, `O`, `I`, `J`, `K`, `P`, `T`, and `X`.
 
 Examples:
 
@@ -132,22 +133,29 @@ Use the generated `hid-pico-a.uf2` file to flash the Pico in BOOTSEL mode.
 
 ## Usage
 
-Connect the Pico via USB. Use a host application that can send/receive HID reports to communicate with the device.
+Connect the Pico via USB. Use a host application that can send/receive HID reports to communicate with the device. HP Prime programs that can communicate
+with the Pico are provided in the Prime directory.
 
 For UART connect the following pins to your UART device:
 
-- GPIO0 TX
-- GPIO1 RX
-- Suitable GND and 3V3out 
+- GPIO0 TX (Pin 1)
+- GPIO1 RX (Pin 2)
+- GND (Pin 3)
 
-Note: Use a FTDI232 to bring the Pico UART output up to RS232 levels.
+Note: Use a FTDI232 to bring the Pico UART output up to RS232 levels, and
+cross TX and RX (null modem) when communicating directly with another computer.
 
 For I2C connect:
 
-- GPIO4 as SDA
-- GPIO5 as SCL
-- Suitable GND and 3V3out
-The current implementation uses `i2c0` at 100 kHz.
+- GPIO4 SDA (Pin 6)
+- GPIO5 SCL (Pin 7)
+- GND (Pin 8)
+- 3V3out (Pin 36)
+
+For IR connect:
+
+- GND (Pin 8) to 68 to 75 Ohm resistor (exact value should be determined by spec of IR LED) to -ve side of IR LED (940nm)
+- GPIO6 (Pin 9) to +ve size of IR LED
 
 ## I2C Device Architecture
 
@@ -253,21 +261,6 @@ This usually indicates wiring/power/pull-up issues or wrong device address.
 
 The firmware supports advanced environmental sensor measurements via the Bosch BME68x API (BME680/BME688). These commands provide calibrated sensor readings with unit conversion.
 
-### `N <device>`: Read BME68x Sensor Data
-
-Triggers a forced-mode measurement and returns calibrated readings.
-
-- **Command format**: `N bme68x`
-- **Response format**: `0 {temp_cC,pressure_hPa_x100,humidity_pct_x100,gas_res_kohm_x100,gas_valid}`
-  - Values are integers with scaling factors (divide by 100 to get actual units)
-  - `gas_valid` is 1 if the gas measurement is valid, 0 otherwise
-- **Example**:
-  - Command: `N bme68x`
-  - Response: `0 {2487,101343,5203,4521,1}` (24.87°C, 1013.43 hPa, 52.03%, 45.21 kΩ, gas valid)
-- **Error responses**:
-  - `1 BME68x read failed` if the sensor cannot be read
-  - `1 Unknown sensor name` if device is not recognized
-
 ### `M <device> {params}`: Configure BME68x Sensor
 
 Configures sensor oversampling, filtering, and heater parameters.
@@ -287,17 +280,27 @@ Configures sensor oversampling, filtering, and heater parameters.
   - `1 Expected 8 config params` if wrong number of parameters
   - `1 BME68x config failed` if configuration fails
 
+### `N <device>`: Read BME68x Sensor Data
+
+Triggers a forced-mode measurement and returns calibrated readings.
+
+- **Command format**: `N bme68x`
+- **Response format**: `0 {temp_cC,pressure_hPa_x100,humidity_pct_x100,gas_res_kohm_x100,gas_valid}`
+  - Values are integers with scaling factors (divide by 100 to get actual units)
+  - `gas_valid` is 1 if the gas measurement is valid, 0 otherwise
+- **Example**:
+  - Command: `N bme68x`
+  - Response: `0 {2487,101343,5203,4521,1}` (24.87°C, 1013.43 hPa, 52.03%, 45.21 kΩ, gas valid)
+- **Error responses**:
+  - `1 BME68x read failed` if the sensor cannot be read
+  - `1 Unknown sensor name` if device is not recognized
+
 ### Notes on BME68x Integration
 
 - Both BME680 (I2C address 0x76) and BME688 (variant-aware) are supported automatically via the Bosch API.
 - Calibration data is read from sensor NVM during initialization.
 - Forced mode measurement typically completes in 100-200 ms depending on oversampling settings.
-- Pico lacks a hardware FPU; floating-point calculations may be slower than on host systems.
 - For maximum accuracy, allow the sensor to stabilize after power-up (1-2 seconds) before taking critical measurements.
-
-For IR printer output connect:
-
-- GPIO6 as IR transmit output (through a transistor driver to an IR LED)
 
 ## Host Application
 
