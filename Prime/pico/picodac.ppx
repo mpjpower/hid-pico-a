@@ -1,0 +1,68 @@
+#pragma mode(separator(.,;) integer(h32))
+
+//===========================================================================
+// Control DAC via I2C by Mark Power
+//
+// Pico library must have been loaded onto the Prime and checked for errors
+// Currently only supports fast mode output of MCP4725 DAC connected to Pico
+//
+//===========================================================================
+//
+
+//===========================================================================
+// Open connection to MCP4725 DAC - this just checks that the Pico is
+// available. It perhaps should be enhanced to check that the DAC is present
+//===========================================================================
+
+EXPORT mcp4725_Init()
+BEGIN
+  LOCAL sts;
+
+  sts:=Pico.Open();
+
+  RETURN(sts);
+END;
+
+//==========================================================================
+// Set the MCP4725 DAC output to be the specified 12 bit value
+//
+// #FFFh is Vcc -1 in LSB (so very nearly 3.3v)
+// #FFEh is Vcc -2 in LSB
+// ...
+// #001h is almost 0v
+// #000h should be 0v
+//
+// The DAC is driven purely in Fast mode, which means that the value set is
+// not written to the EPROM and remembered the next time the DAC is
+// powered up.
+//==========================================================================
+
+EXPORT mcp4725_FastSet(value)
+BEGIN
+  LOCAL d1, d2;
+  LOCAL sts;
+
+  d1:=B→R(IP((value/256) MOD 16));
+  d2:=B→R(IP(value MOD 256));
+
+  sts:=Pico.Send("K 96 {"+d1+","+d2+"}");
+
+  RETURN(sts);
+END;
+
+//===========================================================================
+// Simple test to show the DAC outputting a wave
+//===========================================================================
+
+EXPORT mcp4725_Test()
+BEGIN
+  LOCAL v;
+  WHILE 1 DO
+    FOR v FROM #FFFh DOWNTO #0h STEP 64 DO
+        mcp4725_FastSet(v);
+    END;
+    FOR v FROM #0h TO #FFFh STEP 64 DO
+        mcp4725_FastSet(v);
+    END;
+  END;
+END;
