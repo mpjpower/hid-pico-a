@@ -52,6 +52,17 @@ static bool parse_i2c_addr(const char *name, uint8_t *addr_out) {
     return true;
 }
 
+static bool resolve_i2c_addr(const char *device, uint8_t *addr_out) {
+    const i2c_device_t *dev = find_device(device);
+
+    if (dev) {
+        *addr_out = dev->addr;
+        return true;
+    }
+
+    return parse_i2c_addr(device, addr_out);
+}
+
 int SetRegs(const char *device, uint8_t *regs, uint8_t *vals, int count) {
     const i2c_device_t *dev = find_device(device);
     uint8_t raw_addr = 0;
@@ -75,6 +86,17 @@ int SetRegs(const char *device, uint8_t *regs, uint8_t *vals, int count) {
     }
 
     return 0;
+}
+
+int WriteBytes(const char *device, const uint8_t *bytes, int count) {
+    uint8_t raw_addr = 0;
+
+    if (count <= 0 || !bytes || !resolve_i2c_addr(device, &raw_addr)) {
+        return -1;
+    }
+
+    int ret = i2c_write_blocking(I2C_BUS, raw_addr, bytes, (size_t) count, false);
+    return (ret == count) ? 0 : -1;
 }
 
 int GetRegs(const char *device, uint8_t *regs, int count, uint8_t *out) {
@@ -108,16 +130,13 @@ int GetRegs(const char *device, uint8_t *regs, int count, uint8_t *out) {
 
 bool i2c_device_known(const char *device) {
     uint8_t addr = 0;
-    return (find_device(device) != NULL) || parse_i2c_addr(device, &addr);
+    return resolve_i2c_addr(device, &addr);
 }
 
 bool i2c_device_probe(const char *device) {
-    const i2c_device_t *dev = find_device(device);
     uint8_t addr;
 
-    if (dev) {
-        addr = dev->addr;
-    } else if (!parse_i2c_addr(device, &addr)) {
+    if (!resolve_i2c_addr(device, &addr)) {
         return false;
     }
 
