@@ -155,12 +155,12 @@ For I2C connect:
 For IR connect:
 
 - GND (Pin 8) to 68 to 75 Ohm resistor (exact value should be determined by spec of IR LED) to -ve side of IR LED (940nm)
-- GPIO6 (Pin 9) to +ve size of IR LED
+- GPIO6 (Pin 9) to +ve side of IR LED
 
 ## I2C Device Architecture
 
 - Common bus and register API is implemented in `i2c_interface.c` / `i2c_interface.h`.
-- Each supported I2C device should be in its own source file.
+- Each named I2C device should be in its own source file.
 - If `I`/`J` is given a numeric device token and there is no registered device with that name, firmware treats the token as a raw 7-bit I2C address and performs generic register read/write operations.
 - Current device support:
     - `adxl343.c` provides ADXL343 support at I2C address `0x53` with device name `adxl343`.
