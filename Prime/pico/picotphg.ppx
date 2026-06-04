@@ -1,0 +1,246 @@
+#pragma mode(separator(.,;) integer(h32))
+
+//==========================================================================
+// Temperature, Pressure, Humidity and Gas Resistance Sensor Measurements
+// by Mark Power
+// 
+// Supports the Bosch BME680 and BME688 which is accessed via the Pico library
+//
+// Important: Ensure that both the Pico and Plot4g programs are loaded and checked on 
+// the Prime before using the TPHG programs
+//
+//==========================================================================
+//
+
+EXPORT tphgEnabled;
+
+// Results Matrix
+LOCAL NUMBER_RESULTS:=120;
+LOCAL res_list;
+
+// BME68x to Pico Helper Functions
+
+get_pico_text_response(cmd, timeout_ms)
+BEGIN
+  LOCAL resp:=Pico.SendTimed(cmd, timeout_ms);
+
+  IF TYPE(resp)==6 AND SIZE(resp)>=2 AND resp(1)==0 AND TYPE(resp(2))==6 THEN
+    RETURN(CHAR(resp(2)));
+  END;
+
+  RETURN("1 No response");
+END;
+
+EXPORT bme68x_config()
+BEGIN
+  RETURN(get_pico_text_response("M bme68x {1,0,150,1,64,3,2,3}", 200));
+END;
+
+EXPORT bme68x_read()
+BEGIN
+  LOCAL r:="";
+  LOCAL tries:=0;
+
+  REPEAT
+    r:=get_pico_text_response("N bme68x", 450);
+    IF r(1)==48 THEN
+      RETURN(r);
+    END;
+
+    WAIT(0.25);
+    tries:=tries+1;
+  UNTIL tries>1;
+
+  RETURN(r);
+END;
+
+//==========================================================================
+// Initialise the sensor and set the tphgEnabled global variable.
+// Applications should call this function before bme68x_forced_measurement()
+//==========================================================================
+
+EXPORT Init()
+BEGIN
+  LOCAL sts;
+  tphgEnabled:=0;
+
+  sts:=Pico.Open();
+
+  IF sts(1)==0 THEN
+    IF EQ(Pico.GetRegs(118, {208}),{0,{97}}) THEN
+      tphgEnabled:=1;
+      LOCAL st:=bme68x_config();
+      WAIT(1);
+      sts:={EXPR(MID(st,1,1)), MID(st,3)};
+    ELSE
+      sts:={1,"BME68x not connected"};
+    END;
+  END;
+
+  RETURN(sts);
+END;
+
+//==========================================================================
+// Perform once forced measurement of T/P/H/G
+//==========================================================================
+
+EXPORT bme68x_forced_measurement()
+BEGIN
+  LOCAL sts;
+  LOCAL c:=0;
+  LOCAL l:={};
+  LOCAL g:=0;
+
+  REPEAT
+    IFERR
+      sts:=bme68x_read()
+    THEN
+      WAIT(0.25);
+      c:=c+1;
+    END;
+
+    IF sts(1)<>48 THEN
+      WAIT(0.25);
+      c:=c+1;
+    END;
+  UNTIL sts(1)==48 OR c>2;
+
+  IF sts(1)<>48 THEN
+    RETURN({0,0,0,0});
+  END;
+
+  // Convert string to list
+  l:=EXPR(MID(sts,3));
+
+  // If gas measured, return it otherwise zero
+  IF l(5)==1 THEN
+    g:=l(4)/1000;
+  END;
+
+  // Returns {temperature, pressure, humidity, gas res}
+  RETURN({l(1)/100, l(2)/100, l(3)/100, g});
+END;
+
+//==========================================================================
+// Print the T/P/H/G measurements to the terminal screen
+//==========================================================================
+
+print_bme68x_result(res)
+BEGIN
+  PRINT(STRING(Time)+", "
+        +STRING(ROUND(res(1),1))+"°C, "
+        +STRING(ROUND(res(2),1))+"hPa, "
+        +STRING(ROUND(res(3),1))+"%, "
+        +STRING(ROUND(res(4),0))+"kΩ");
+END;
+
+//==========================================================================
+// Check if ft260 and bme680 are connected, take sensor readings and output
+// the results to the GUI
+//==========================================================================
+
+EXPORT BME68xGUI() 
+BEGIN
+  L0:={};
+  res_list:=MAKEMAT(0, NUMBER_RESULTS, 5);
+
+  LOCAL delay:=1;
+  LOCAL running:=1;
+  LOCAL res;
+  LOCAL sts;
+
+  sts:=Init();
+
+  IF sts(1)==0 THEN
+    WHILE running DO
+      res:=bme68x_forced_measurement();
+
+      // Drop the first row from the result matrix
+      DELROW(res_list,1);
+
+      // Store the new result list as the last entry in the result matrix
+      ADDROW(res_list, [0,0,0,0,0], NUMBER_RESULTS);
+      res_list(NUMBER_RESULTS, 1):=Time;
+      res_list(NUMBER_RESULTS, 2):=res(1); // Temp
+      res_list(NUMBER_RESULTS, 3):=res(2); // Press
+      res_list(NUMBER_RESULTS, 4):=res(3); // Hum
+      res_list(NUMBER_RESULTS, 5):=res(4); // Gas
+
+      // Show the measurement history
+      LOCAL s:="";
+      IF delay THEN 
+        s:="S(low) F(ast) or Esc. ";
+        s:=s+"Refresh: "+STRING(ROUND(delay,0))+"s. ";
+      END;
+
+      Plot4g.Plot4g(res_list, {2,4,3,5}, 1, 1, {"Temperature °C","Humidity %RHEL","Pressure hPa","Gas Resistance kΩ"}, s);
+
+      // Check if any keys are dowwn
+      CASE
+        IF ISKEYDOWN(34) THEN delay:=10 END;  // S = Slow (10s refresh)
+        IF ISKEYDOWN(20) THEN delay:=1 END;   // F = Fast (1s refresh)
+        IF ISKEYDOWN(4) THEN delay:=0; running:=0 END;    // Esc = End
+        IF ISKEYDOWN(17) THEN DEBUG END;      // Press D for DEBUG
+      END;
+
+      WAIT(delay);
+
+    END;  // End and tidy up when ESC key is pressed
+  ELSE
+    RETURN(sts(2));
+  END;
+
+  RETURN(res_list);
+END;
+
+//==========================================================================
+// Show the graph for a matrix of measurements produced by the GUI. This
+// allows a screen shot to be created after measurement has finished.
+//==========================================================================
+
+EXPORT BME68xResults(data) 
+BEGIN
+  // Show the measurement history
+  Plot4g.Plot4g(data, {2,4,3,5}, 1, 1, {"Temperature °C","Humidity %RHEL","Pressure hPa","Gas Resistance kΩ"}, "");
+
+  FREEZE;
+  WAIT();
+END;
+
+//==========================================================================
+// Check if ft260 and bme680 are connected, take sensor readings and output
+// the results to the terminal
+//==========================================================================
+
+EXPORT BME68xTest() 
+BEGIN
+  LOCAL delay:=1;
+  LOCAL running:=1;
+  LOCAL sts;
+
+  PRINT;
+
+  sts:=Init();
+
+  IF sts(1)==0 THEN
+    WHILE running DO
+      print_bme68x_result(bme68x_forced_measurement());
+
+      CASE
+        IF ISKEYDOWN(34) THEN delay:=10 END;  // S = Slow (10s refresh)
+        IF ISKEYDOWN(20) THEN delay:=1 END;   // F = Fast (1s refresh)
+        IF ISKEYDOWN(4) THEN delay:=0; running:=0 END;    // Esc = End
+        IF ISKEYDOWN(17) THEN DEBUG END;      // Press D for DEBUG
+      END;
+
+      WAIT(delay);
+
+    END;  // End and tidy up when ESC key is pressed
+
+    PRINT("Stopped");
+  ELSE
+    RETURN(sts(2));    // Return error message
+  END;
+
+  RETURN("Ok");
+END;
