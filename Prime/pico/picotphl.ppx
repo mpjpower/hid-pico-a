@@ -1,0 +1,89 @@
+#pragma mode(separator(.,;) integer(h32))
+
+//==========================================================================
+// Temperature, Pressure, Humidity and Luminosity Sensor Measurements
+// by Mark Power
+// 
+// Supports the Bosch BME68x which is accessed via the PicoTphg
+// library and the TSL2591 light sensor via the PicoLux library
+//
+// Important: Ensure that the Pico, Plot4g, PicoLux and PicoTphg programs
+// are loaded and checked on the Prime before using the TPHL programs
+//
+// Plots 4 graphs of temp, pressure, humidity and lux. Returns a matrix of
+// the most recent 120 measurements with time, full spectrum, infrared,
+// visible luminosity, calculated lux, temp. pressure, humidity and gas
+// resistance.
+//
+//==========================================================================
+
+// Results Matrix for the GUI
+LOCAL NUMBER_RESULTS:=120;
+LOCAL res_list;
+
+EXPORT TphlGUI()
+BEGIN
+  res_list:=MAKEMAT(0, NUMBER_RESULTS, 9);
+
+  LOCAL delay:=1;
+  LOCAL running:=1;
+  LOCAL resl, rest;
+  LOCAL sts;
+
+  sts:=PicoLux.Init();
+  IF sts(1)==1 THEN
+    RETURN(sts);  // Error exit
+  END;
+
+  sts:=PicoTphg.Init();
+  IF sts(1)==1 THEN
+    RETURN(sts);  // Error exit
+  END;
+
+  // Discard the first readings as they seem to include previous readings
+  PicoLux.Read();
+  PicoTphg.bme68x_forced_measurement();
+
+  WHILE running DO
+    resl:=PicoLux.Read();
+    // Returns {time, full spectrum, infrared, visible, lux}
+
+    rest:=PicoTphg.bme68x_forced_measurement();
+    // Returns {temp, pressure, humidity, gas}
+    
+    // Drop the first row from the result matrix
+    DELROW(res_list,1);
+
+    // Store the new result list as the last entry in the result matrix
+    ADDROW(res_list, [0,0,0,0,0], NUMBER_RESULTS);
+    res_list(NUMBER_RESULTS, 1):=resl(1); // Time
+    res_list(NUMBER_RESULTS, 2):=resl(2); // Full spectrum
+    res_list(NUMBER_RESULTS, 3):=resl(3); // Infrared
+    res_list(NUMBER_RESULTS, 4):=resl(4); // Visible
+    res_list(NUMBER_RESULTS, 5):=resl(5); // Calculated Lux
+    res_list(NUMBER_RESULTS, 6):=rest(1); // Temp
+    res_list(NUMBER_RESULTS, 7):=rest(2); // Pressure
+    res_list(NUMBER_RESULTS, 8):=rest(3); // Humidity
+    res_list(NUMBER_RESULTS, 9):=rest(4); // Gas
+
+
+    // Show the measurement history
+    LOCAL s:="S(low) F(ast) or Esc. ";
+    s:=s+"Refresh: "+STRING(ROUND(delay,0))+"s. ";
+
+    Plot4g.Plot4g(res_list, {6,8,7,5}, 1, 1, {"Temperature °C","Humidity %RHEL","Pressure hPa","Lux"}, s);
+
+    CASE
+      IF ISKEYDOWN(34) THEN delay:=10 END;  // S = Slow (10s refresh)
+      IF ISKEYDOWN(20) THEN delay:=1 END;   // F = Fast (1s refresh)
+      IF ISKEYDOWN(4) THEN delay:=0; running:=0 END;    // Esc = End
+      IF ISKEYDOWN(17) THEN DEBUG END;      // Press D for DEBUG
+    END;
+
+    WAIT(delay);
+  END;  // End and tidy up when ESC key is pressed
+
+  UClose();
+
+  RETURN(res_list);
+END;
