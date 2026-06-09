@@ -18,6 +18,11 @@ BEGIN
     sts:={1, "Pico not connected"};
   END;
 
+  // Clear any stale packets so first command gets a fresh response.
+  IF TYPE(sts)==6 AND SIZE(sts)>=1 AND sts[1]==0 THEN
+    FlushUsbRx(16);
+  END;
+
   RETURN sts;
 END;
 
@@ -187,6 +192,9 @@ BEGIN
   RETURN({1, "Type not handled"});
   END;
 
+  // Drop delayed responses from previous timed-out commands.
+  FlushUsbRx(16);
+
   USBSend(cmd);
 
   msg:=WaitForMessage(timeout_ms);
@@ -199,10 +207,198 @@ BEGIN
 END;
 
 
+EXPORT FlushUsbRx(max_reads)
+BEGIN
+  LOCAL i;
+  LOCAL pkt;
+
+  IF TYPE(max_reads)<>0 OR max_reads<=0 THEN
+    max_reads:=8;
+  END;
+
+  FOR i FROM 1 TO max_reads DO
+    pkt:=USBRecv();
+    IF NOT(TYPE(pkt)==6 AND SIZE(pkt)>0) THEN
+      RETURN 0;
+    END;
+  END;
+
+  RETURN 0;
+END;
+
+
 EXPORT Send(cmd)
 BEGIN
   // Default timeout for control/configuration commands.
   RETURN SendTimed(cmd, 50);
+END;
+
+
+EXPORT ScanI2CTimed(timeout_ms)
+BEGIN
+  LOCAL recv;
+  LOCAL txt;
+  LOCAL addrs:={};
+  LOCAL i;
+  LOCAL ch;
+  LOCAL nib;
+  LOCAL base;
+  LOCAL q;
+  LOCAL b;
+
+  IF TYPE(timeout_ms)<>0 OR timeout_ms<1 THEN
+    timeout_ms:=300;
+  END;
+
+  recv:=SendTimed("Q", timeout_ms);
+
+  IF TYPE(recv)<>6 OR SIZE(recv)<2 OR recv[1]<>0 THEN
+    RETURN {1,"No response"};
+  END;
+
+  txt:=CHAR(recv[2]);
+
+  // Accept either raw bitmap or status-prefixed form "0 <bitmap>".
+  IF LEFT(txt,2)=="0 " THEN
+    txt:=RIGHT(txt,SIZE(txt)-2);
+  END;
+
+  IF SIZE(txt)<32 THEN
+    RETURN {1,"Invalid bitmap length"};
+  END;
+
+  txt:=LEFT(txt,32);
+
+  FOR i FROM 1 TO 32 DO
+    ch:=MID(txt,i,1);
+    nib:=-1;
+
+    CASE
+    IF ch=="0" THEN nib:=0; END;
+    IF ch=="1" THEN nib:=1; END;
+    IF ch=="2" THEN nib:=2; END;
+    IF ch=="3" THEN nib:=3; END;
+    IF ch=="4" THEN nib:=4; END;
+    IF ch=="5" THEN nib:=5; END;
+    IF ch=="6" THEN nib:=6; END;
+    IF ch=="7" THEN nib:=7; END;
+    IF ch=="8" THEN nib:=8; END;
+    IF ch=="9" THEN nib:=9; END;
+    IF ch=="A" OR ch=="a" THEN nib:=10; END;
+    IF ch=="B" OR ch=="b" THEN nib:=11; END;
+    IF ch=="C" OR ch=="c" THEN nib:=12; END;
+    IF ch=="D" OR ch=="d" THEN nib:=13; END;
+    IF ch=="E" OR ch=="e" THEN nib:=14; END;
+    IF ch=="F" OR ch=="f" THEN nib:=15; END;
+    END;
+
+    IF nib<0 THEN
+      RETURN {1,"Invalid hex bitmap"};
+    END;
+
+    base:=4*(i-1);
+    q:=nib;
+
+    FOR b FROM 0 TO 3 DO
+      IF (q MOD 2)==1 THEN
+        addrs(0):=base+b;
+      END;
+      q:=IP(q/2);
+    END;
+  END;
+
+  RETURN addrs;
+END;
+
+
+EXPORT ScanI2C()
+BEGIN
+  // Q command scans all addresses and can exceed the 50 ms default timeout.
+  RETURN ScanI2CTimed(300);
+END;
+
+
+EXPORT SelfTestPico(iterations)
+BEGIN
+  LOCAL n;
+  LOCAL i;
+  LOCAL results:={};
+  LOCAL stats:={0,0}; // {pass,fail}
+  LOCAL r;
+  LOCAL name;
+  LOCAL ok;
+
+  IF TYPE(iterations)<>0 OR iterations<1 THEN
+    n:=3;
+  ELSE
+    n:=IP(iterations);
+    IF n<1 THEN
+      n:=1;
+    END;
+  END;
+
+  // Ensure link is up before testing command flows.
+  r:=Open();
+  IF NOT(TYPE(r)==6 AND SIZE(r)>=1 AND r[1]==0) THEN
+    RETURN {0,1,{{"Open",0,r}}};
+  END;
+
+  // Test V command shape.
+  name:="PicoVersion";
+  r:=PicoVersion();
+  ok:=(TYPE(r)==2 AND SIZE(r)>0);
+  IF ok THEN
+    stats[1]:=stats[1]+1;
+  ELSE
+    stats[2]:=stats[2]+1;
+  END;
+  results(0):={name,ok,r};
+
+  // Test LED command path.
+  name:="LedOn";
+  r:=LedOn();
+  ok:=(TYPE(r)==2 OR (TYPE(r)==6 AND SIZE(r)>=1 AND r[1]==0));
+  IF ok THEN
+    stats[1]:=stats[1]+1;
+  ELSE
+    stats[2]:=stats[2]+1;
+  END;
+  results(0):={name,ok,r};
+
+  name:="LedOff";
+  r:=LedOff();
+  ok:=(TYPE(r)==2 OR (TYPE(r)==6 AND SIZE(r)>=1 AND r[1]==0));
+  IF ok THEN
+    stats[1]:=stats[1]+1;
+  ELSE
+    stats[2]:=stats[2]+1;
+  END;
+  results(0):={name,ok,r};
+
+  // Repeat scan/version to detect one-command lag.
+  FOR i FROM 1 TO n DO
+    name:="ScanI2C["+STRING(i)+"]";
+    r:=ScanI2C();
+    ok:=(TYPE(r)==6 AND (SIZE(r)==0 OR TYPE(r[1])==0));
+    IF ok THEN
+      stats[1]:=stats[1]+1;
+    ELSE
+      stats[2]:=stats[2]+1;
+    END;
+    results(0):={name,ok,r};
+
+    name:="PicoVersionAfterScan["+STRING(i)+"]";
+    r:=PicoVersion();
+    ok:=(TYPE(r)==2 AND SIZE(r)>0);
+    IF ok THEN
+      stats[1]:=stats[1]+1;
+    ELSE
+      stats[2]:=stats[2]+1;
+    END;
+    results(0):={name,ok,r};
+  END;
+
+  RETURN {stats[1],stats[2],results};
 END;
 
 
