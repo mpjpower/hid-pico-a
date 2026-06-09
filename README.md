@@ -28,6 +28,7 @@ A Raspberry Pi Pico application that acts as a USB-HID device, responding to ASC
 - `O`: Turn off the LED
 - `P <text>`: Send plain text bytes over IR using HP 82240B byte-frame LUT encoding (quotes are not required)
 - `P {b1,b2,...}`: If the first parameter character is `{`, parse explicit decimal byte values (0-255), including 0/null bytes
+- `Q`: Scan the i2c bus and return 32 characters representing a hex bitmap of devices detected on the bus
 - `R`: Read currently queued UART bytes and return them as a raw HID payload
 - `S <text>`: Send raw text bytes over UART. This command does not return a status-prefixed response.
 - `T`: Send a fixed HP 82240B IR self-test line (`HP82240B SELF-TEST OK`) followed by CR/LF

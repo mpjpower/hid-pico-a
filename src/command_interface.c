@@ -11,7 +11,7 @@
 #include "ir_printer.h"
 #include "bme68x_pico.h"
 
-#define VERSION "1.0.36"
+#define VERSION "1.0.37"
 
 static const uint8_t IR_SELF_TEST_LINE[] = {
     'H','P','8','2','2','4','0','B',' ','S','E','L','F','-','T','E','S','T',
@@ -179,6 +179,21 @@ void command_interface_process(const uint8_t *buffer, uint16_t bufsize, char *re
             led_off();
             snprintf(response, response_size, "0 LED off");
             break;
+
+        case 'Q': {
+            char *qp = command + 1;
+
+            skip_spaces(&qp);
+            if (*qp != '\0') {
+                snprintf(response, response_size, "1 Invalid format, expected Q");
+                break;
+            }
+
+            if (response_size < 33 || i2c_scan_bitmap_hex(response, response_size) != 0) {
+                snprintf(response, response_size, "1 I2C scan failed");
+            }
+            break;
+        }
 
         case 'I': {
             char devname[32] = {0};

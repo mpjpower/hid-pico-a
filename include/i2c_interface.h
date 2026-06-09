@@ -2,6 +2,7 @@
 #define I2C_INTERFACE_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define I2C_MAX_DEVICES 8
@@ -40,5 +41,10 @@ bool i2c_device_known(const char *device);
 
 // Returns true if the device ACKs on the I2C bus.
 bool i2c_device_probe(const char *device);
+
+// Scans all 7-bit I2C addresses and writes a 32-char hex bitmap plus NUL.
+// Each hex digit represents four addresses from low to high.
+// out_size must be at least 33.
+int i2c_scan_bitmap_hex(char *out, size_t out_size);
 
 #endif // I2C_INTERFACE_H

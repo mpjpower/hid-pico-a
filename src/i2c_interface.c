@@ -8,6 +8,9 @@
 #define I2C_SDA_PIN  4
 #define I2C_SCL_PIN  5
 #define I2C_BAUD     100000
+#define I2C_SCAN_MIN_ADDR 0x08
+#define I2C_SCAN_MAX_ADDR 0x77
+#define I2C_SCAN_PROBE_TRIES 3
 
 static const i2c_device_t *devices[I2C_MAX_DEVICES];
 static int device_count = 0;
@@ -61,6 +64,24 @@ static bool resolve_i2c_addr(const char *device, uint8_t *addr_out) {
     }
 
     return parse_i2c_addr(device, addr_out);
+}
+
+static bool i2c_addr_ack(uint8_t addr) {
+    uint8_t dummy = 0;
+    int ret = i2c_write_blocking(I2C_BUS, addr, &dummy, 1, false);
+    return ret == 1;
+}
+
+static bool i2c_addr_ack_stable(uint8_t addr) {
+    int ack_count = 0;
+
+    for (int i = 0; i < I2C_SCAN_PROBE_TRIES; i++) {
+        if (i2c_addr_ack(addr)) {
+            ack_count++;
+        }
+    }
+
+    return ack_count >= ((I2C_SCAN_PROBE_TRIES / 2) + 1);
 }
 
 int SetRegs(const char *device, uint8_t *regs, uint8_t *vals, int count) {
@@ -140,6 +161,29 @@ bool i2c_device_probe(const char *device) {
         return false;
     }
 
-    int ret = i2c_write_blocking(I2C_BUS, addr, NULL, 0, false);
-    return ret >= 0;
+    return i2c_addr_ack(addr);
+}
+
+int i2c_scan_bitmap_hex(char *out, size_t out_size) {
+    static const char HEX[] = "0123456789ABCDEF";
+
+    if (!out || out_size < 33) {
+        return -1;
+    }
+
+    for (int nibble = 0; nibble < 32; nibble++) {
+        uint8_t bits = 0;
+
+        for (int bit = 0; bit < 4; bit++) {
+            uint8_t addr = (uint8_t) (nibble * 4 + bit);
+            if (addr >= I2C_SCAN_MIN_ADDR && addr <= I2C_SCAN_MAX_ADDR && i2c_addr_ack_stable(addr)) {
+                bits |= (uint8_t) (1u << bit);
+            }
+        }
+
+        out[nibble] = HEX[bits & 0x0F];
+    }
+
+    out[32] = '\0';
+    return 0;
 }
