@@ -271,28 +271,14 @@ BEGIN
 
   FOR i FROM 1 TO 32 DO
     ch:=MID(txt,i,1);
-    nib:=-1;
+    nib:=ASC(ch)-48;
+    nib:=nib(1);
 
-    CASE
-    IF ch=="0" THEN nib:=0; END;
-    IF ch=="1" THEN nib:=1; END;
-    IF ch=="2" THEN nib:=2; END;
-    IF ch=="3" THEN nib:=3; END;
-    IF ch=="4" THEN nib:=4; END;
-    IF ch=="5" THEN nib:=5; END;
-    IF ch=="6" THEN nib:=6; END;
-    IF ch=="7" THEN nib:=7; END;
-    IF ch=="8" THEN nib:=8; END;
-    IF ch=="9" THEN nib:=9; END;
-    IF ch=="A" OR ch=="a" THEN nib:=10; END;
-    IF ch=="B" OR ch=="b" THEN nib:=11; END;
-    IF ch=="C" OR ch=="c" THEN nib:=12; END;
-    IF ch=="D" OR ch=="d" THEN nib:=13; END;
-    IF ch=="E" OR ch=="e" THEN nib:=14; END;
-    IF ch=="F" OR ch=="f" THEN nib:=15; END;
-    END;
+    IF nib>9 THEN
+      nib:=nib-7;
+    END;    
 
-    IF nib<0 THEN
+    IF nib<0 OR nib>15 THEN
       RETURN {1,"Invalid hex bitmap"};
     END;
 
@@ -364,6 +350,8 @@ BEGIN
     stats[2]:=stats[2]+1;
   END;
   results(0):={name,ok,r};
+
+  WAIT(0.5);
 
   name:="LedOff";
   r:=LedOff();
