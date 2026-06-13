@@ -119,6 +119,20 @@ Pico.SetRegs("tsl2591", {0,3,1,16})
 Pico.SetRegs("adxl343", {49,8,45,8})
 ```
 
+### `ScanI2C()`
+
+Scans the I2C bus for responding 7-bit device addresses and returns them as a Prime list.
+
+- Sends wire command: `Q`
+- Returns `{0,{addr,addr,...}}` on success, `{1,<error>}` on failure
+- Convenience wrapper around `ScanI2CTimed(300)`
+
+Example:
+
+```
+Pico.ScanI2C() returns for example {41, 83, 96, 118} depending on what devices are connected to the I2C bus
+```
+
 ## IR printer command format
 
 When sending a raw `P` command through `Send()` / `SendTimed()`:
