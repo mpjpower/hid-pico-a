@@ -147,7 +147,7 @@ END;
 
 EXPORT ReceiveUartBytesTimed(timeout_ms)
 BEGIN
-  LOCAL resp:=SendTimed("R", timeout_ms);
+  LOCAL resp:=SendTimedNoFlush("R", timeout_ms);
   LOCAL recv;
   LOCAL msg:={};
   LOCAL c:=1;
@@ -174,7 +174,7 @@ BEGIN
 END;
 
 
-EXPORT SendTimed(cmd, timeout_ms)
+LOCAL SendTimedNoFlush(cmd, timeout_ms)
 BEGIN
   LOCAL msg;
 
@@ -192,9 +192,6 @@ BEGIN
   RETURN({1, "Type not handled"});
   END;
 
-  // Drop delayed responses from previous timed-out commands.
-  FlushUsbRx(16);
-
   USBSend(cmd);
 
   msg:=WaitForMessage(timeout_ms);
@@ -204,6 +201,15 @@ BEGIN
   ELSE
     RETURN(0);
   END;
+END;
+
+
+EXPORT SendTimed(cmd, timeout_ms)
+BEGIN
+  // Drop delayed responses from previous timed-out commands.
+  FlushUsbRx(16);
+
+  RETURN SendTimedNoFlush(cmd, timeout_ms);
 END;
 
 
