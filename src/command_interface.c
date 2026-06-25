@@ -102,6 +102,43 @@ static int parse_u8_list(char **p, uint8_t *out, int max_count) {
     return count;
 }
 
+static int parse_u16_list(char **p, uint16_t *out, int max_count) {
+    int count = 0;
+
+    skip_spaces(p);
+    if (**p != '{') {
+        return -1;
+    }
+    (*p)++;
+
+    while (1) {
+        char *endptr;
+        unsigned long value;
+
+        skip_spaces(p);
+        value = strtoul(*p, &endptr, 10);
+        if (endptr == *p || value > 65535 || count >= max_count) {
+            return -1;
+        }
+
+        out[count++] = (uint16_t) value;
+        *p = endptr;
+
+        skip_spaces(p);
+        if (**p == ',') {
+            (*p)++;
+            continue;
+        }
+        if (**p == '}') {
+            (*p)++;
+            break;
+        }
+        return -1;
+    }
+
+    return count;
+}
+
 void command_interface_process(const uint8_t *buffer, uint16_t bufsize, char *response, size_t response_size) {
     if (!response || response_size == 0) {
         return;
@@ -445,9 +482,10 @@ void command_interface_process(const uint8_t *buffer, uint16_t bufsize, char *re
             // M bme68x {gas_en,heater_ms,heater_temp,filter,osr_hum,osr_temp,osr_pres,mode}
             // Configure BME68x sensor
             char devname[32] = {0};
-            uint8_t params[8];
+            uint16_t params[8];
             char *mp = command + 2;
             int param_count;
+            bool legacy_packed;
             bme68x_config_t cfg;
             
             if (parse_devname(&mp, devname, sizeof(devname)) != 0) {
@@ -460,7 +498,7 @@ void command_interface_process(const uint8_t *buffer, uint16_t bufsize, char *re
                 break;
             }
             
-            param_count = parse_u8_list(&mp, params, 8);
+            param_count = parse_u16_list(&mp, params, 8);
             
             if (param_count == 0) {
                 // No parameters: just acknowledge
@@ -472,16 +510,36 @@ void command_interface_process(const uint8_t *buffer, uint16_t bufsize, char *re
                 snprintf(response, response_size, "1 Expected 8 config params");
                 break;
             }
+
+            // Backward compatibility with the legacy packed-byte format:
+            // {gas_en,dur_hi,dur_lo,temp_hi,temp_lo,filter,osr_hum,osr_temp}
+            // Detect this only when fields 3..6 cannot be valid in the new format.
+            legacy_packed = (params[3] > 7 || params[4] > 5 || params[5] > 5 || params[6] > 5);
             
             // Parse configuration
-            cfg.gas_enabled = params[0];
-            cfg.heater_dur = (uint16_t)((params[1] << 8) | params[2]);
-            cfg.heater_temp = (uint16_t)((params[3] << 8) | params[4]);
-            cfg.filter_coeff = params[5];
-            cfg.osr_hum = params[6];
-            cfg.osr_temp = params[7];
-            cfg.osr_pres = params[7];
-            cfg.mode = 1;  // Forced mode
+            cfg.gas_enabled = params[0] ? 1u : 0u;
+            if (legacy_packed) {
+                cfg.heater_dur = (uint16_t)(((params[1] & 0xFFu) << 8) | (params[2] & 0xFFu));
+                cfg.heater_temp = (uint16_t)(((params[3] & 0xFFu) << 8) | (params[4] & 0xFFu));
+                cfg.filter_coeff = (uint8_t) params[5];
+                cfg.osr_hum = (uint8_t) params[6];
+                cfg.osr_temp = (uint8_t) params[7];
+                cfg.osr_pres = (uint8_t) params[7];
+                cfg.mode = 1;  // Forced mode
+            } else {
+                cfg.heater_dur = params[1];
+                cfg.heater_temp = params[2];
+                cfg.filter_coeff = (uint8_t) params[3];
+                cfg.osr_hum = (uint8_t) params[4];
+                cfg.osr_temp = (uint8_t) params[5];
+                cfg.osr_pres = (uint8_t) params[6];
+                cfg.mode = (uint8_t) params[7];
+            }
+
+            if (cfg.filter_coeff > 7 || cfg.osr_hum > 5 || cfg.osr_temp > 5 || cfg.osr_pres > 5 || cfg.mode > 3) {
+                snprintf(response, response_size, "1 Invalid BME68x config range");
+                break;
+            }
             
             if (bme68x_pico_configure(&cfg) != 0) {
                 snprintf(response, response_size, "1 BME68x config failed");

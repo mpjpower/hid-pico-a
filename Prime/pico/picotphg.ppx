@@ -33,7 +33,7 @@ END;
 
 EXPORT bme68x_config()
 BEGIN
-  RETURN(get_pico_text_response("M bme68x {1,0,150,1,64,3,2,3}", 200));
+  RETURN(get_pico_text_response("M bme68x {1,150,320,3,2,3,3,1}", 200));
 END;
 
 EXPORT bme68x_read()
