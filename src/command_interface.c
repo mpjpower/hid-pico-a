@@ -9,9 +9,10 @@
 #include "uart_interface.h"
 #include "led.h"
 #include "ir_printer.h"
+#include "ir_receiver.h"
 #include "bme68x_pico.h"
 
-#define VERSION "1.0.37"
+#define VERSION "1.0.61"
 
 static const uint8_t IR_SELF_TEST_LINE[] = {
     'H','P','8','2','2','4','0','B',' ','S','E','L','F','-','T','E','S','T',
@@ -174,10 +175,160 @@ void command_interface_process(const uint8_t *buffer, uint16_t bufsize, char *re
     }
     command[actual_len] = '\0';
 
-    switch (command[0]) {
+    enum {
+        DISPATCH_DEBUG_A = 0x100,
+        DISPATCH_DEBUG_B,
+        DISPATCH_DEBUG_C,
+        DISPATCH_DEBUG_D,
+        DISPATCH_DEBUG_E,
+        DISPATCH_DEBUG_F
+    };
+    int dispatch = command[0];
+    if (command[0] == 'Y') {
+        char *debug_args = command + 2;
+        skip_spaces(&debug_args);
+        if (command[1] < 'A' || command[1] > 'F' || *debug_args != '\0') {
+            snprintf(response, response_size, "1 Invalid debug command, use YA through YF");
+            return;
+        }
+        dispatch = DISPATCH_DEBUG_A + command[1] - 'A';
+    }
+
+    switch (dispatch) {
         case 'V':
             snprintf(response, response_size, "0 Version: %s", VERSION);
             break;
+
+        case DISPATCH_DEBUG_A: {
+            ir_receiver_acquisition_status_t status;
+            ir_receiver_get_acquisition_status(&status);
+            snprintf(response, response_size,
+                     "0 A500k n=%lu b=%lu lo=%u hi=%u ov=%lu",
+                     (unsigned long) status.samples_captured,
+                     (unsigned long) status.blocks_completed,
+                     status.last_block_min,
+                     status.last_block_max,
+                     (unsigned long) status.fifo_overruns);
+            break;
+        }
+
+        case DISPATCH_DEBUG_B: {
+            ir_receiver_burst_status_t status;
+            ir_receiver_get_burst_status(&status);
+            snprintf(response, response_size,
+                     "0 br=%lu dt=%lu t=%u/%u g=%u p=%u k=%u",
+                     (unsigned long) status.bursts_detected,
+                     (unsigned long) status.last_interval_samples,
+                     status.on_threshold,
+                     status.off_threshold,
+                     status.background_score,
+                     status.pulse_score,
+                     status.last_burst_peak);
+            break;
+        }
+
+        case DISPATCH_DEBUG_C: {
+            ir_receiver_burst_status_t status;
+            ir_receiver_get_burst_status(&status);
+            snprintf(response, response_size,
+                     "0 a=%u/%u g=%u d=%u p=%u t=%u/%u k=%u q=%u",
+                     status.baseline,
+                     status.noise,
+                     status.background_score,
+                     status.background_deviation,
+                     status.pulse_score,
+                     status.on_threshold,
+                     status.off_threshold,
+                     status.last_burst_peak,
+                     status.first_candidate_peak);
+            break;
+        }
+
+        case DISPATCH_DEBUG_D: {
+            ir_receiver_decode_status_t status;
+            ir_receiver_get_decode_status(&status);
+            snprintf(response, response_size,
+                     "0 st=%lu fr=%lu tm=%lu pe=%lu ok=%lu c=%03X b=%u h=%06lX e=%u r=%u s=%u",
+                     (unsigned long) status.starts_detected,
+                     (unsigned long) status.frames_completed,
+                     (unsigned long) status.timing_errors,
+                     (unsigned long) status.parity_errors,
+                     (unsigned long) status.valid_frames,
+                     status.last_code,
+                     status.last_byte,
+                     (unsigned long) status.last_half_bit_mask,
+                     status.last_frame_edges,
+                     status.last_frame_rejected_edges,
+                     status.last_slot);
+            break;
+        }
+
+        case DISPATCH_DEBUG_E: {
+            ir_receiver_failure_status_t status;
+            ir_receiver_get_failure_status(&status);
+            snprintf(response, response_size,
+                     "0 n=%lu m=%06lX c=%03X e=%u r=%u",
+                     (unsigned long) status.failed_frames,
+                     (unsigned long) status.half_bit_mask,
+                     status.code,
+                     status.edges,
+                     status.rejected_edges);
+            break;
+        }
+
+        case DISPATCH_DEBUG_F: {
+            uint16_t times[12];
+            size_t count = ir_receiver_get_failed_edge_times(times, 12u);
+            size_t offset = 1u;
+
+            response[0] = '{';
+            for (size_t i = 0; i < count; i++) {
+                offset += (size_t) snprintf(response + offset, response_size - offset,
+                                            (i + 1u == count) ? "%u" : "%u,", times[i]);
+            }
+            snprintf(response + offset, response_size - offset, "}");
+            break;
+        }
+
+        case 'G': {
+            uint8_t received[15];
+            char *gp = command + 1;
+            size_t max_count;
+            size_t count;
+            size_t offset;
+
+            skip_spaces(&gp);
+            if (*gp != '\0') {
+                snprintf(response, response_size, "1 Invalid format, expected G");
+                break;
+            }
+            if (response_size < 6u) {
+                snprintf(response, response_size, "1 Response buffer too small");
+                break;
+            }
+
+            max_count = (response_size - 2u) / 4u;
+            if (max_count > sizeof(received)) {
+                max_count = sizeof(received);
+            }
+            count = ir_receiver_read(received, max_count);
+            response[0] = '{';
+            offset = 1u;
+            for (size_t i = 0; i < count; i++) {
+                int written = snprintf(response + offset, response_size - offset,
+                                       (i + 1u == count) ? "%u}" : "%u,",
+                                       received[i]);
+                if (written < 0 || (size_t) written >= response_size - offset) {
+                    response[0] = '\0';
+                    break;
+                }
+                offset += (size_t) written;
+            }
+            if (count == 0u) {
+                snprintf(response + offset, response_size - offset, "}");
+            }
+            break;
+        }
 
         case 'U': {
             int baud;

@@ -13,6 +13,7 @@
 #include "hid_transport.h"
 #include "led.h"
 #include "ir_printer.h"
+#include "ir_receiver.h"
 
 // UART configuration
 #define BAUD_RATE 9600
@@ -31,6 +32,7 @@ int main() {
 
     // Reserve GPIO6 for IR printer output (avoids UART GPIO0/1 and I2C GPIO4/5).
     ir_printer_init(IR_PRINTER_GPIO_PIN);
+    ir_receiver_init();
 
     // Initialise I2C bus and register devices
     i2c_bus_init();

@@ -5,15 +5,17 @@ A Raspberry Pi Pico application that acts as a USB-HID device, responding to ASC
 ## Features
 
 - USB-HID interface for communication
-- Command parsing: single letter commands with optional parameters
+- Command parsing: single-letter commands with optional parameters, plus two-letter IR debug commands
 - UART configuration and communication
 - I2C device interface with per-device implementation files, generic i2c support and high level helpers for specific sensors
 - IR printing to HP82240 Infrared Printer
+- IR receipt of Infrared Printer output from other HP calculators
 - Enabling/disabling Pico LED
 - Pico Firmware version reporting
 
 ## Supported Commands
 
+- `G`: Read queued decoded IR bytes as a decimal list, for example `{65,66}`; returns `{}` when empty
 - `I <device> {reg,val,reg,val,...}`: Set one or more I2C registers (decimal values 0-255)
 	- Example: `I tsl2591 {0,3,1,16}`
     - `device` may be a registered name (for example `tsl2591`) or a numeric 7-bit I2C address (for example `83` or `0x53`)
@@ -37,6 +39,20 @@ A Raspberry Pi Pico application that acts as a USB-HID device, responding to ASC
 - `X [duration_ms] [DC]` or `X DC [duration_ms]`: Diagnostic IR output command
     - Carrier mode (default): `X [duration_ms]` sends 32.768 kHz IR burst (default 2000 ms, range 1..10000)
     - DC mode: `X DC [duration_ms]` (or `X [duration_ms] DC`) drives GPIO6 steadily high for meter checks (default 1000 ms, range 1..5000)
+- `YA` through `YF`: IR receiver debug commands; details are below
+
+### IR Receive and Debug Commands
+
+`G` drains up to 15 decoded IR bytes from the receiver queue. It takes no parameters and returns a decimal list such as `{65,66}`; an empty queue returns `{}`. Unlike most commands, the response has no status prefix. The queue contains bytes from successfully decoded IR frames.
+
+The debug commands use a `Y` prefix followed immediately by a letter from `A` through `F`. The prefix distinguishes these diagnostics from standalone command letters, which remain available for other commands. `YA` through `YE` return a `0 ` status prefix; `YF` returns a list without a prefix.
+
+- `YA`: ADC acquisition and DMA status. `n` is the number of captured samples, `b` completed DMA blocks, `lo`/`hi` the minimum/maximum sample in the latest block, and `ov` FIFO overruns. The response is labeled `A500k`.
+- `YB`: Carrier-burst detection status. `br` is the detected burst count, `dt` the interval between leading edges in ADC samples, `t` the on/off thresholds, `g` the background score, `p` the pulse score, and `k` the latest burst peak.
+- `YC`: Signal-level and threshold detail. `a` is baseline/noise, `g` background score, `d` background deviation, `p` pulse score, `t` on/off thresholds, `k` the latest burst peak, and `q` the first candidate peak.
+- `YD`: Decoder totals and latest frame. `st` START sequences detected, `fr` completed frames, `tm` timing errors, `pe` parity errors, `ok` valid frames, `c` the latest 12-bit code (hex), `b` the latest decoded byte (decimal), `h` the latest 24-half-bit slot mask (hex), `e` accepted edges, `r` rejected edges, and `s` the latest slot.
+- `YE`: Latest failed-frame summary. `n` is the failed-frame count, `m` the half-bit slot mask (hex), `c` the code (hex), `e` accepted edges, and `r` rejected edges.
+- `YF`: ADC-sample offsets for up to 12 edges in the latest failed frame, relative to that frame's origin. Returns `{}` when no failed-frame edge timings are available.
 
 ## Response Format
 
@@ -45,7 +61,7 @@ Most command responses begin with a status prefix:
 - `0 ` (ASCII 48 followed by 32): success
 - `1 ` (ASCII 49 followed by 32): error
 
-This format is used by commands such as `V`, `U`, `L`, `O`, `I`, `J`, `K`, `P`, `T`, and `X`.
+This format is used by commands such as `V`, `U`, `L`, `O`, `I`, `J`, `K`, `P`, `T`, `X`, and `YA` through `YE`.
 
 Examples:
 

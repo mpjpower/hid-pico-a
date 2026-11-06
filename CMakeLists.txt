@@ -57,6 +57,7 @@ add_executable(${TARGET_NAME}
     src/bme68x_pico.c
     src/led.c
     src/ir_printer.c
+    src/ir_receiver.c
     src/hid_transport.c
     src/usb_descriptors.c
     src/command_interface.c
@@ -91,6 +92,8 @@ target_link_libraries(${TARGET_NAME}
     ${WIRELESS_LIBS}
     hardware_pio
     hardware_i2c
+    hardware_adc
+    hardware_dma
 )
 
 # Enable USB output, disable UART output
